@@ -1257,7 +1257,7 @@ void Control::deletePage() {
 void Control::bookmarkPage() {
     PageRef p = getCurrentPage();
     doc->lock();
-    p->bookmarked = true;
+    p->bookmarked = !p->isBookmarked();
     doc->unlock();
 }
 
