@@ -57,6 +57,8 @@ public:
     size_t getPdfPageNr() const;
 
     bool isAnnotated();
+    bool bookmarked = false;
+    bool isBookmarked();
 
     void setBackgroundColor(Color color);
     Color getBackgroundColor() const;

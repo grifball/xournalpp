@@ -452,7 +452,12 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GdkEvent* even
         case ACTION_GOTO_PREVIOUS_ANNOTATED_PAGE:
             scrollHandler->scrollToAnnotatedPage(false);
             break;
-
+        case ACTION_GOTO_NEXT_BOOKMARKED_PAGE:
+            scrollHandler->scrollToBookmarkedPage(true);
+            break;
+        case ACTION_GOTO_PREVIOUS_BOOKMARKED_PAGE:
+            scrollHandler->scrollToBookmarkedPage(false);
+            break;
             // Menu Journal
         case ACTION_NEW_PAGE_BEFORE:
             insertNewPage(getCurrentPageNo());
@@ -468,6 +473,9 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GdkEvent* even
             break;
         case ACTION_DELETE_PAGE:
             deletePage();
+            break;
+        case ACTION_BOOKMARK_PAGE:
+            bookmarkPage();
             break;
         case ACTION_PAPER_FORMAT:
             paperFormat();
@@ -1244,6 +1252,13 @@ void Control::deletePage() {
 
     scrollHandler->scrollToPage(pNr, 0);
     this->win->getXournal()->forceUpdatePagenumbers();
+}
+
+void Control::bookmarkPage() {
+    PageRef p = getCurrentPage();
+    doc->lock();
+    p->bookmarked = true;
+    doc->unlock();
 }
 
 void Control::insertNewPage(size_t position) { pageBackgroundChangeController->insertNewPage(position); }

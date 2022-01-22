@@ -140,6 +140,10 @@ auto XojPage::isAnnotated() -> bool {
     return false;
 }
 
+auto XojPage::isBookmarked() -> bool {
+    return bookmarked;
+}
+
 void XojPage::setBackgroundType(const PageType& bgType) {
     this->bgType = bgType;
 

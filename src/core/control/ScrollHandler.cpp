@@ -86,6 +86,25 @@ void ScrollHandler::scrollToAnnotatedPage(bool next) {
     }
 }
 
+void ScrollHandler::scrollToBookmarkedPage(bool next) {
+    write(0,"test\n",sizeof("test\n"));
+    if (!this->control->getWindow()) {
+        return;
+    }
+
+    int step = next ? 1 : -1;
+
+    Document* doc = this->control->getDocument();
+
+    for (size_t i = this->control->getCurrentPageNo() + step; i != npos && i < doc->getPageCount();
+         i = ((i == 0 && step == -1) ? npos : i + step)) {
+        if (doc->getPage(i)->isBookmarked()) {
+            scrollToPage(i);
+            break;
+        }
+    }
+}
+
 auto ScrollHandler::isPageVisible(size_t page, int* visibleHeight) -> bool {
     if (!this->control->getWindow()) {
         if (visibleHeight) {

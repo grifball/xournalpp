@@ -188,6 +188,7 @@ public:
     void appendNewPdfPages();
     void insertPage(const PageRef& page, size_t position);
     void deletePage();
+    void bookmarkPage();
 
     /**
      * Disable / enable delete page button

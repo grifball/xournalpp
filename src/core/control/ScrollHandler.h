@@ -39,6 +39,7 @@ public:
     void scrollToPage(size_t page, double top = 0);
 
     void scrollToAnnotatedPage(bool next);
+    void scrollToBookmarkedPage(bool next);
 
     bool isPageVisible(size_t page, int* visibleHeight = nullptr);
 
