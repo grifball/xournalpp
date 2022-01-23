@@ -87,7 +87,6 @@ void PreviewJob::drawPage() {
         case RENDER_TYPE_PAGE_LAYERSTACK:
         case RENDER_TYPE_PAGE_PREVIEW:
             if (page->getBackgroundType().isPdfPage()) {
-                //if (page->isBookmarked())
                 drawBackgroundPdf(doc);
             }
             break;

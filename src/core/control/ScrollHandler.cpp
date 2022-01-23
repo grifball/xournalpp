@@ -87,7 +87,6 @@ void ScrollHandler::scrollToAnnotatedPage(bool next) {
 }
 
 void ScrollHandler::scrollToBookmarkedPage(bool next) {
-    write(0,"test\n",sizeof("test\n"));
     if (!this->control->getWindow()) {
         return;
     }

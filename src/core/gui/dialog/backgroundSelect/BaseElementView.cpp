@@ -54,7 +54,6 @@ void BaseElementView::repaint() {
 }
 
 void BaseElementView::paint(cairo_t* cr) {
-  return;
     GtkAllocation alloc;
     gtk_widget_get_allocation(this->widget, &alloc);
 
@@ -101,42 +100,6 @@ void BaseElementView::paint(cairo_t* cr) {
             Shadow::drawShadow(cr2, Shadow::getShadowTopLeftSize() + 2, Shadow::getShadowTopLeftSize() + 2, width,
                                height);
         }
-        /*
-        if (this->bookmarked) {
-            // Draw border
-            Util::cairo_set_source_rgbi(cr2, Color{0x00ff00U});
-            cairo_set_line_width(cr2, 2);
-            cairo_set_line_cap(cr2, CAIRO_LINE_CAP_BUTT);
-            cairo_set_line_join(cr2, CAIRO_LINE_JOIN_BEVEL);
-
-            cairo_rectangle(cr2, Shadow::getShadowTopLeftSize() - 1, Shadow::getShadowTopLeftSize() - 1, width + 7,
-                            height + 7);
-
-            cairo_stroke(cr2);
-        }
-
-        if (this->selected && false) {
-            // Draw border
-            Util::cairo_set_source_rgbi(cr2, dlg->getSettings()->getBorderColor());
-//            Util::cairo_set_source_rgbi(cr2, sidebar->getControl()->getSettings()->getBorderColor());
-            cairo_set_line_width(cr2, 2);
-            cairo_set_line_cap(cr2, CAIRO_LINE_CAP_BUTT);
-            cairo_set_line_join(cr2, CAIRO_LINE_JOIN_BEVEL);
-
-            cairo_rectangle(cr2, Shadow::getShadowTopLeftSize() + 0.5, Shadow::getShadowTopLeftSize() + 0.5, width + 3,
-                            height + 3);
-
-            cairo_stroke(cr2);
-        }
-
-        if (this->selected || this->bookmarked) {
-            cairo_set_operator(cr2, CAIRO_OPERATOR_ATOP);
-            Shadow::drawShadow(cr2, Shadow::getShadowTopLeftSize(), Shadow::getShadowTopLeftSize(), width + 4, height + 4);
-        } else {
-            cairo_set_operator(cr2, CAIRO_OPERATOR_ATOP);
-            Shadow::drawShadow(cr2, Shadow::getShadowTopLeftSize() + 2, Shadow::getShadowTopLeftSize() + 2, width, height);
-        }
-        */
 
         cairo_destroy(cr2);
     }

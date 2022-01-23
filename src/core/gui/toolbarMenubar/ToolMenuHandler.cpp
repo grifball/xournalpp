@@ -427,17 +427,10 @@ void ToolMenuHandler::initToolItems() {
     addStockItem("GOTO_NEXT_LAYER", ACTION_GOTO_NEXT_LAYER, "go-next", _("Go to next layer"));
     addStockItem("GOTO_TOP_LAYER", ACTION_GOTO_TOP_LAYER, "go-top", _("Go to top layer"));
 
-    /*
-    addCustomItem("GOTO_NEXT_ANNOTATED_PAGE", ACTION_GOTO_NEXT_ANNOTATED_PAGE, "page-annotated-next",
-                  _("Next annotated page"));
-    */
     addCustomItem("GOTO_NEXT_ANNOTATED_PAGE", ACTION_GOTO_NEXT_BOOKMARKED_PAGE, "page-annotated-next",
                   _("Next annotated page"));
-    /*
-    auto* tbBookmarkPage = new ToolButton(listener, "GOTO_NEXT_BOOKMARKED_PAGE", ACTION_GOTO_NEXT_BOOKMARKED_PAGE,
-                                           iconName("page-bookmarked-next").c_str(), _("Next bookmarked page"));
-    addToolItem(tbBookmarkPage);
-    */
+
+    // Bookmarks:
     auto* tbNextBookmarkedPage = new ToolButton(listener, "GOTO_NEXT_BOOKMARKED_PAGE", ACTION_GOTO_NEXT_BOOKMARKED_PAGE,
                                            iconName("page-bookmarked-next").c_str(), _("Next bookmarked page"));
     addToolItem(tbNextBookmarkedPage);
@@ -447,22 +440,6 @@ void ToolMenuHandler::initToolItems() {
     auto* tbBookmarkPage = new ToolButton(listener, "BOOKMARK_PAGE", ACTION_BOOKMARK_PAGE,
                                            iconName("page-bookmark").c_str(), _("Bookmarked page"));
     addToolItem(tbBookmarkPage);
-    /*
-    auto* tbNextBookmarkedPage = new ToolButton(listener, "GOTO_NEXT_BOOKMARKED_PAGE", ACTION_GOTO_NEXT_BOOKMARKED_PAGE,
-                                           iconName("page-bookmarked-next").c_str(), _("Next bookmarked page"));
-    addToolItem(tbNextBookmarkedPage);
-    auto* tbBookmarkPage = new ToolButton(listener, "BOOKMARK_PAGE", ACTION_BOOKMARK_PAGE,
-                                           iconName("page-bookmark").c_str(), _("Bookmarked page"));
-    addToolItem(tbBookmarkPage);
-    */
-    /*
-    addCustomItem("GOTO_NEXT_BOOKMARKED_PAGE", ACTION_GOTO_NEXT_ANNOTATED_PAGE, "page-annotated-next",
-                  _("Next annotated page"));
-    */
-    /*
-    addCustomItem("GOTO_NEXT_ANNOTATED_PAGE", ACTION_GOTO_NEXT_BOOKMARKED_PAGE, "page-annotated-next",
-                  _("Next bookmarked page"));
-    */
 
     /* Menu Journal
      * ------------------------------------------------------------------------

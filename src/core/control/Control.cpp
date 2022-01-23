@@ -1259,14 +1259,12 @@ void Control::bookmarkPage() {
     doc->lock();
     p->bookmarked = !p->isBookmarked();
     doc->unlock();
-    //fireDocumentChanged(DOCUMENT_CHANGE_COMPLETE);
-    //firePageSelected(p);
-    //size_t pageId = this->doc->indexOf(p);
-    //this->win->getXournal()->pageChanged(pageId);
-    //fireDocumentChanged(DOCUMENT_CHANGE_PDF_BOOKMARKS);
-    //#define N "fireDocumentChanged(DOCUMENT_CHANGE_PDF_CUSTOM_BOOKMARKS);\n"
-    //write(0,N,sizeof(N));
+    // this is a similar event to DOCUMENT_CHANGE_PDF_BOOKMARKS but that fire
+    // was hanging the program, so I made a new one that is more targeted. this
+    // is probably too heavy of a fire (it refreshes all previews in the
+    // sidebar) but it works for now
     fireDocumentChanged(DOCUMENT_CHANGE_PDF_CUSTOM_BOOKMARKS);
+    // also ensure the main window preview gets updated:
     size_t pn = getCurrentPageNo();
     this->firePageChanged(pn);
 }

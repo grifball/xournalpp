@@ -215,8 +215,7 @@ static void gtk_xournal_draw_shadow(GtkXournal* xournal, cairo_t* cr, int left, 
 
           Settings* settings = xournal->view->getControl()->getSettings();
 
-          // Draw border
-          //Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
+          // Draw bookmark border
           Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
           float lineWidth = 4.0;
           cairo_set_line_width(cr, 4.0);
@@ -236,9 +235,8 @@ static void gtk_xournal_draw_shadow(GtkXournal* xournal, cairo_t* cr, int left, 
         if (selected) {
           Settings* settings = xournal->view->getControl()->getSettings();
 
-          // Draw border
+          // Draw selected border
           Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
-          //Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
           cairo_set_line_width(cr, 4.0);
           cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
           cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
@@ -252,30 +250,6 @@ static void gtk_xournal_draw_shadow(GtkXournal* xournal, cairo_t* cr, int left, 
 
           cairo_stroke(cr);
         }
-    /*
-    if (selected) {
-        Shadow::drawShadow(cr, left - 2, top - 2, width + 4, height + 4);
-
-        Settings* settings = xournal->view->getControl()->getSettings();
-
-        // Draw border
-        //Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
-        Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
-        cairo_set_line_width(cr, 4.0);
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
-        cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
-
-        cairo_move_to(cr, left, top);
-        cairo_line_to(cr, left, top + height);
-        cairo_line_to(cr, left + width, top + height);
-        cairo_line_to(cr, left + width, top);
-        cairo_close_path(cr);
-
-        cairo_stroke(cr);
-    } else {
-        Shadow::drawShadow(cr, left, top, width, height);
-    }
-        */
 }
 
 void gtk_xournal_repaint_area(GtkWidget* widget, int x1, int y1, int x2, int y2) {
