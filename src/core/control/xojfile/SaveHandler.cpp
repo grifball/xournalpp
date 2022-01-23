@@ -184,6 +184,7 @@ void SaveHandler::visitPage(XmlNode* root, PageRef p, Document* doc, int id) {
     root->addChild(page);
     page->setAttrib("width", p->getWidth());
     page->setAttrib("height", p->getHeight());
+    page->setAttrib("bookmarked", p->bookmarked);
 
     auto* background = new XmlNode("background");
     page->addChild(background);
