@@ -108,6 +108,18 @@ void SidebarPreviewBaseEntry::paint(cairo_t* cr) {
 
     double height = page->getHeight() * sidebar->getZoom();
     double width = page->getWidth() * sidebar->getZoom();
+    if (this->bookmarked) {
+        // Draw border
+        Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
+        cairo_set_line_width(cr, 2);
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
+
+        cairo_rectangle(cr, Shadow::getShadowTopLeftSize() - 1, Shadow::getShadowTopLeftSize() - 1, width + 7,
+                        height + 7);
+
+        cairo_stroke(cr);
+    }
 
     if (this->selected) {
         // Draw border
@@ -123,19 +135,9 @@ void SidebarPreviewBaseEntry::paint(cairo_t* cr) {
 
         cairo_set_operator(cr, CAIRO_OPERATOR_ATOP);
         Shadow::drawShadow(cr, Shadow::getShadowTopLeftSize(), Shadow::getShadowTopLeftSize(), width + 4, height + 4);
-    } else
-    if (this->bookmarked) {
-        // Draw border
-        Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
-        cairo_set_line_width(cr, 2);
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
-        cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
+    }
 
-        cairo_rectangle(cr, Shadow::getShadowTopLeftSize() + 0.5, Shadow::getShadowTopLeftSize() + 0.5, width + 3,
-                        height + 3);
-
-        cairo_stroke(cr);
-
+    if (this->selected || this->bookmarked) {
         cairo_set_operator(cr, CAIRO_OPERATOR_ATOP);
         Shadow::drawShadow(cr, Shadow::getShadowTopLeftSize(), Shadow::getShadowTopLeftSize(), width + 4, height + 4);
     } else {

@@ -33,6 +33,7 @@ public:
      * Select / unselect this entry
      */
     void setSelected(bool selected);
+    void setBookmarked(bool bookmarked);
 
     /**
      * Repaint this widget
@@ -85,6 +86,7 @@ private:
     int id = -1;
 
     bool selected = false;
+    bool bookmarked = false;
 
     GtkWidget* widget = nullptr;
     cairo_surface_t* crBuffer = nullptr;

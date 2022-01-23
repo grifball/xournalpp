@@ -204,14 +204,63 @@ static void gtk_xournal_realize(GtkWidget* widget) {
 }
 
 static void gtk_xournal_draw_shadow(GtkXournal* xournal, cairo_t* cr, int left, int top, int width, int height,
-                                    bool selected) {
+                                    bool selected, bool bookmarked) {
+
+        if (selected || bookmarked) {
+            Shadow::drawShadow(cr, left - 2, top - 2, width + 4, height + 4);
+        } else {
+            Shadow::drawShadow(cr, left, top, width, height);
+        }
+        if (bookmarked) {
+
+          Settings* settings = xournal->view->getControl()->getSettings();
+
+          // Draw border
+          //Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
+          Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
+          float lineWidth = 4.0;
+          cairo_set_line_width(cr, 4.0);
+          cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+          cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
+
+          cairo_move_to(cr, left - lineWidth, top - lineWidth);
+          cairo_line_to(cr, left - lineWidth, top + height + lineWidth);
+          cairo_line_to(cr, left + width + lineWidth, top + height + lineWidth);
+          cairo_line_to(cr, left + width + lineWidth, top - lineWidth);
+          cairo_close_path(cr);
+
+
+          cairo_stroke(cr);
+        }
+
+        if (selected) {
+          Settings* settings = xournal->view->getControl()->getSettings();
+
+          // Draw border
+          Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
+          //Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
+          cairo_set_line_width(cr, 4.0);
+          cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+          cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
+
+          cairo_move_to(cr, left, top);
+          cairo_line_to(cr, left, top + height);
+          cairo_line_to(cr, left + width, top + height);
+          cairo_line_to(cr, left + width, top);
+          cairo_close_path(cr);
+
+
+          cairo_stroke(cr);
+        }
+    /*
     if (selected) {
         Shadow::drawShadow(cr, left - 2, top - 2, width + 4, height + 4);
 
         Settings* settings = xournal->view->getControl()->getSettings();
 
         // Draw border
-        Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
+        //Util::cairo_set_source_rgbi(cr, settings->getBorderColor());
+        Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
         cairo_set_line_width(cr, 4.0);
         cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
         cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
@@ -226,6 +275,7 @@ static void gtk_xournal_draw_shadow(GtkXournal* xournal, cairo_t* cr, int left, 
     } else {
         Shadow::drawShadow(cr, left, top, width, height);
     }
+        */
 }
 
 void gtk_xournal_repaint_area(GtkWidget* widget, int x1, int y1, int x2, int y2) {
@@ -281,7 +331,7 @@ static auto gtk_xournal_draw(GtkWidget* widget, cairo_t* cr) -> gboolean {
             continue;
         }
 
-        gtk_xournal_draw_shadow(xournal, cr, px, py, pw, ph, pv->isSelected());
+        gtk_xournal_draw_shadow(xournal, cr, px, py, pw, ph, pv->isSelected(), pv->getPage()->isBookmarked());
 
         cairo_save(cr);
         cairo_translate(cr, px, py);

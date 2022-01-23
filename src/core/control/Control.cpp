@@ -1267,6 +1267,8 @@ void Control::bookmarkPage() {
     //#define N "fireDocumentChanged(DOCUMENT_CHANGE_PDF_CUSTOM_BOOKMARKS);\n"
     //write(0,N,sizeof(N));
     fireDocumentChanged(DOCUMENT_CHANGE_PDF_CUSTOM_BOOKMARKS);
+    size_t pn = getCurrentPageNo();
+    this->firePageChanged(pn);
 }
 
 void Control::insertNewPage(size_t position) { pageBackgroundChangeController->insertNewPage(position); }
