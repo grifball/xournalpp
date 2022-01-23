@@ -356,6 +356,24 @@ void DocumentView::drawPage(PageRef page, cairo_t* cr, bool dontRenderEditingStr
         drawLayer(cr, l);
         layer++;
     }
+    /*
+    if (page->isBookmarked()) {
+      Util::cairo_set_source_rgbi(cr, Color(0x666666U));
+      cairo_rectangle(cr, 0, 0, width, height);
+      cairo_fill(cr);
+
+      Util::cairo_set_source_rgbi(cr, Color(0x999999U));
+
+      bool second = false;
+      for (int y = 0; y < height; y += 8) {
+          second = !second;
+          for (int x = second ? 8 : 0; x < width; x += 16) {
+              cairo_rectangle(cr, x, y, 8, 8);
+              cairo_fill(cr);
+          }
+      }
+    }
+    */
 
     finializeDrawing();
 }

@@ -44,6 +44,14 @@ auto SidebarPreviewBaseEntry::drawCallback(GtkWidget* widget, cairo_t* cr, Sideb
     return true;
 }
 
+void SidebarPreviewBaseEntry::setBookmarked(bool bookmarked) {
+    if (this->bookmarked == bookmarked) {
+        return;
+    }
+    this->bookmarked = bookmarked;
+
+    gtk_widget_queue_draw(this->widget);
+}
 void SidebarPreviewBaseEntry::setSelected(bool selected) {
     if (this->selected == selected) {
         return;
@@ -104,6 +112,21 @@ void SidebarPreviewBaseEntry::paint(cairo_t* cr) {
     if (this->selected) {
         // Draw border
         Util::cairo_set_source_rgbi(cr, sidebar->getControl()->getSettings()->getBorderColor());
+        cairo_set_line_width(cr, 2);
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);
+
+        cairo_rectangle(cr, Shadow::getShadowTopLeftSize() + 0.5, Shadow::getShadowTopLeftSize() + 0.5, width + 3,
+                        height + 3);
+
+        cairo_stroke(cr);
+
+        cairo_set_operator(cr, CAIRO_OPERATOR_ATOP);
+        Shadow::drawShadow(cr, Shadow::getShadowTopLeftSize(), Shadow::getShadowTopLeftSize(), width + 4, height + 4);
+    } else
+    if (this->bookmarked) {
+        // Draw border
+        Util::cairo_set_source_rgbi(cr, Color{0x00ff00U});
         cairo_set_line_width(cr, 2);
         cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
         cairo_set_line_join(cr, CAIRO_LINE_JOIN_BEVEL);

@@ -191,9 +191,42 @@ void SidebarPreviewPages::updatePreviews() {
     this->previews.clear();
 
     for (size_t i = 0; i < len; i++) {
-        SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, doc->getPage(i));
+        auto page = doc->getPage(i);
+        SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, page);
         this->previews.push_back(p);
+        if (page->isBookmarked())
+          p->setBookmarked(true);
+        /*
+        //auto cr = p->crBuffer;
+//        this->previews.push_back(p);
+//        auto wid = p->getWidget();
+//        GtkAllocation alloc;
+//        gtk_widget_get_allocation(wid, &alloc);
+//        auto crBuffer = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, alloc.width, alloc.height);
+//        auto cr = cairo_create(crBuffer);
+        auto width = p->getWidgetWidth();
+        auto height = p->getWidgetHeight();
+        if (page->isBookmarked()) {
+          #define N "drawing bookmark\n"
+          write(0,N,sizeof(N));
+          Util::cairo_set_source_rgbi(cr, Color(0x666666U));
+          cairo_rectangle(cr, 0, 0, width, height);
+          cairo_fill(cr);
+
+          Util::cairo_set_source_rgbi(cr, Color(0x999999U));
+
+          bool second = false;
+          for (int y = 0; y < height; y += 8) {
+              second = !second;
+              for (int x = second ? 8 : 0; x < width; x += 16) {
+                  cairo_rectangle(cr, x, y, 8, 8);
+                  cairo_fill(cr);
+              }
+          }
+        }
+        */
         gtk_layout_put(GTK_LAYOUT(this->iconViewPreview), p->getWidget(), 0, 0);
+        //gtk_layout_put(GTK_LAYOUT(this->iconViewPreview), wid, 0, 0);
     }
 
     layout();

@@ -51,6 +51,7 @@ public:
     virtual int getHeight();
 
     virtual void setSelected(bool selected);
+    virtual void setBookmarked(bool bookmarked);
 
     virtual void repaint();
     virtual void updateSize();
@@ -78,6 +79,7 @@ protected:
      * If this page is currently selected
      */
     bool selected = false;
+    bool bookmarked = false;
 
     /**
      * The sidebar which displays the previews

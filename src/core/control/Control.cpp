@@ -1259,6 +1259,14 @@ void Control::bookmarkPage() {
     doc->lock();
     p->bookmarked = !p->isBookmarked();
     doc->unlock();
+    //fireDocumentChanged(DOCUMENT_CHANGE_COMPLETE);
+    //firePageSelected(p);
+    //size_t pageId = this->doc->indexOf(p);
+    //this->win->getXournal()->pageChanged(pageId);
+    //fireDocumentChanged(DOCUMENT_CHANGE_PDF_BOOKMARKS);
+    //#define N "fireDocumentChanged(DOCUMENT_CHANGE_PDF_CUSTOM_BOOKMARKS);\n"
+    //write(0,N,sizeof(N));
+    fireDocumentChanged(DOCUMENT_CHANGE_PDF_CUSTOM_BOOKMARKS);
 }
 
 void Control::insertNewPage(size_t position) { pageBackgroundChangeController->insertNewPage(position); }

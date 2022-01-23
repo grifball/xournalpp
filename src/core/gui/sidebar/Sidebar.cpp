@@ -45,7 +45,6 @@ void Sidebar::initPages(GtkWidget* sidebarContents, GladeGui* gui) {
 
         // Add widget to sidebar
         gtk_box_pack_start(GTK_BOX(sidebarContents), p->getWidget(), true, true, 0);
-
         i++;
     }
 
@@ -152,6 +151,7 @@ auto Sidebar::getControl() -> Control* { return this->control; }
 
 void Sidebar::documentChanged(DocumentChangeType type) {
     if (type == DOCUMENT_CHANGE_CLEARED || type == DOCUMENT_CHANGE_COMPLETE || type == DOCUMENT_CHANGE_PDF_BOOKMARKS) {
+        write(0,"updating sidebar\n",sizeof("updating sidebar\n"));
         updateVisibleTabs();
     }
 }
