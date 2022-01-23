@@ -295,10 +295,13 @@ void LoadHandler::parseContents() {
 
         double width = LoadHandlerHelper::getAttribDouble("width", this);
         double height = LoadHandlerHelper::getAttribDouble("height", this);
-        int bookmarked = LoadHandlerHelper::getAttribInt("bookmarked", this);
 
         this->page = std::make_unique<XojPage>(width, height);
-        this->page->bookmarked = (bookmarked == 1);
+
+        if (LoadHandlerHelper::getAttrib("bookmarked", true, this)) {
+          int bookmarked = LoadHandlerHelper::getAttribInt("bookmarked", this);
+          this->page->bookmarked = (bookmarked == 1);
+        }
 
         pages.push_back(this->page);
     } else if (strcmp(elementName, "audio") == 0) {
