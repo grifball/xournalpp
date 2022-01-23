@@ -82,6 +82,8 @@ void SidebarPreviewLayers::pageChanged(size_t page) {
 }
 
 void SidebarPreviewLayers::updatePreviews() {
+    #define M "updatePreviews\n"
+    write(0,M,sizeof(M));
     if (!enabled) {
         return;
     }
@@ -144,6 +146,8 @@ void SidebarPreviewLayers::updateSelectedLayer() {
     }
 
     this->selectedEntry = layerIndex;
+    #define M "updating selected\n"
+    write(0,M,sizeof(M));
     if (this->selectedEntry != npos && this->selectedEntry < this->previews.size()) {
         SidebarPreviewBaseEntry* p = this->previews[this->selectedEntry];
         p->setSelected(true);

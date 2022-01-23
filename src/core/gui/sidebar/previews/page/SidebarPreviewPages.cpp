@@ -194,8 +194,11 @@ void SidebarPreviewPages::updatePreviews() {
         auto page = doc->getPage(i);
         SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, page);
         this->previews.push_back(p);
-        if (page->isBookmarked())
-          p->setBookmarked(true);
+        p->setBookmarked(page->isBookmarked());
+        if (i == this->selectedEntry) {
+          p->setSelected(true);
+        }
+        //p->setSelected(page->isSelected());
         /*
         //auto cr = p->crBuffer;
 //        this->previews.push_back(p);
@@ -271,7 +274,10 @@ void SidebarPreviewPages::pageInserted(size_t page) {
     Document* doc = control->getDocument();
     doc->lock();
 
-    SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, doc->getPage(page));
+    PageRef pr = doc->getPage(page);
+    SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, pr);
+    p->setBookmarked(pr->isBookmarked());
+    //p->setSelected(pr->isSelected());
 
     doc->unlock();
 
