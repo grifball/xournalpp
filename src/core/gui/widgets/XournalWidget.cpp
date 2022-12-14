@@ -14,6 +14,7 @@
 #include "gui/Layout.h"                     // for Layout
 #include "gui/LegacyRedrawable.h"           // for Redrawable
 #include "gui/PageView.h"                   // for XojPageView
+#include "core/model/XojPage.h" // for XojPage
 #include "gui/Shadow.h"                     // for Shadow
 #include "gui/XournalView.h"                // for XournalView
 #include "gui/inputdevices/InputContext.h"  // for InputContext
@@ -292,7 +293,7 @@ static auto gtk_xournal_draw(GtkWidget* widget, cairo_t* cr) -> gboolean {
     // Add a padding for the shadow of the pages
     Rectangle clippingRect(x1 - 10, y1 - 10, x2 - x1 + 20, y2 - y1 + 20);
 
-    for (auto&& pv: xournal->view->getViewPages()) {
+    for (XojPageView* pv: xournal->view->getViewPages()) {
         int px = pv->getX();
         int py = pv->getY();
         int pw = pv->getDisplayWidth();
