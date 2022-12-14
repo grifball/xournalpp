@@ -1,32 +1,52 @@
 #include "XournalMain.h"
 
-#include <algorithm>
-#include <memory>
+#include <algorithm>  // for copy, sort, max
+#include <array>      // for array
+#include <clocale>    // for setlocale, LC_NUMERIC
+#include <cstdio>     // for printf
+#include <cstdlib>    // for exit, size_t
+#include <exception>  // for exception
+#include <iostream>   // for operator<<, endl, basic_...
+#include <locale>     // for locale
+#include <memory>     // for unique_ptr, allocator
+#include <optional>   // for optional, nullopt
+#include <stdexcept>  // for runtime_error
+#include <string>     // for string, basic_string
+#include <vector>     // for vector
 
-#include <glib/gstdio.h>
-#include <gtk/gtk.h>
-#include <libintl.h>
+#include <gio/gio.h>      // for GApplication, G_APPLICATION
+#include <glib-object.h>  // for G_CALLBACK, g_signal_con...
+#include <glib.h>         // for GOptionEntry, gchar, G_O...
+#include <gtk/gtk.h>      // for gtk_dialog_add_button
+#include <libintl.h>      // for bindtextdomain, textdomain
 
-#include "control/xojfile/LoadHandler.h"
-#include "gui/GladeSearchpath.h"
-#include "gui/MainWindow.h"
-#include "gui/XournalView.h"
-#include "undo/EmergencySaveRestore.h"
-#include "util/Stacktrace.h"
-#include "util/StringUtils.h"
-#include "util/XojMsgBox.h"
-#include "util/i18n.h"
+#include "control/RecentManager.h"           // for RecentManager
+#include "control/jobs/BaseExportJob.h"      // for ExportBackgroundType
+#include "control/jobs/XournalScheduler.h"   // for XournalScheduler
+#include "control/settings/LatexSettings.h"  // for LatexSettings
+#include "control/settings/Settings.h"       // for Settings
+#include "control/settings/SettingsEnums.h"  // for ICON_THEME_COLOR, ICON_T...
+#include "control/xojfile/LoadHandler.h"     // for LoadHandler
+#include "gui/GladeSearchpath.h"             // for GladeSearchpath
+#include "gui/MainWindow.h"                  // for MainWindow
+#include "gui/XournalView.h"                 // for XournalView
+#include "model/Document.h"                  // for Document
+#include "undo/EmergencySaveRestore.h"       // for EmergencySaveRestore
+#include "undo/UndoRedoHandler.h"            // for UndoRedoHandler
+#include "util/PathUtil.h"                   // for getConfigFolder, openFil...
+#include "util/PlaceholderString.h"          // for PlaceholderString
+#include "util/Stacktrace.h"                 // for Stacktrace
+#include "util/Util.h"                       // for execInUiThread
+#include "util/XojMsgBox.h"                  // for XojMsgBox
+#include "util/i18n.h"                       // for _, FS, _F
 
-#include "Control.h"
-#include "ExportHelper.h"
-#include "config-dev.h"
-#include "config-paths.h"
-#include "config.h"
-#include "filesystem.h"
+#include "Control.h"       // for Control
+#include "ExportHelper.h"  // for exportImg, exportPdf
+#include "config-dev.h"    // for ERRORLOG_DIR
+#include "config-git.h"    // for GIT_BRANCH, GIT_ORIGIN_O...
+#include "config.h"        // for GETTEXT_PACKAGE, ENABLE_NLS
+#include "filesystem.h"    // for path, operator/, exists
 
-#if __linux__
-#include <libgen.h>
-#endif
 namespace {
 
 constexpr auto APP_FLAGS = GApplicationFlags(G_APPLICATION_SEND_ENVIRONMENT | G_APPLICATION_NON_UNIQUE);
@@ -48,12 +68,17 @@ auto migrateSettings() -> MigrateResult;
 void checkForErrorlog();
 void checkForEmergencySave(Control* control);
 
-auto exportPdf(const char* input, const char* output, const char* range, ExportBackgroundType exportBackground,
-               bool progressiveMode) -> int;
-auto exportImg(const char* input, const char* output, const char* range, int pngDpi, int pngWidth, int pngHeight,
-               ExportBackgroundType exportBackground) -> int;
-
 void initResourcePath(GladeSearchpath* gladePath, const gchar* relativePathAndFile, bool failIfNotFound = true);
+
+void initCAndCoutLocales() {
+    /**
+     * Force numbers to be printed out and parsed by C libraries (cairo) in the "classic" locale.
+     * This avoids issue with tags when exporting to PDF, see #3551
+     */
+    setlocale(LC_NUMERIC, "C");
+
+    std::cout.imbue(std::locale());
+}
 
 void initLocalisation() {
 #ifdef ENABLE_NLS
@@ -76,13 +101,8 @@ void initLocalisation() {
                   "xournalpp with msvc",
                   e.what());
     }
-    /**
-     * Force numbers to be printed out and parsed by C libraries (cairo) in the "classic" locale.
-     * This avoids issue with tags when exporting to PDF, see #3551
-     */
-    setlocale(LC_NUMERIC, "C");
 
-    std::cout.imbue(std::locale());
+    initCAndCoutLocales();
 }
 
 auto migrateSettings() -> MigrateResult {
@@ -223,6 +243,9 @@ void checkForEmergencySave(Control* control) {
  * @param input Path to the input file
  * @param output Path to the output file(s)
  * @param range Page range to be parsed. If range=nullptr, exports the whole file
+ * @param layerRange Layer range to be parsed. Will only export those layers, for every exported page.
+ *                  If a number is too high for the number of layers on a given page, it is just ignored.
+ *                  If range=nullptr, exports all layers.
  * @param pngDpi Set dpi for Png files. Non positive values are ignored
  * @param pngWidth Set the width for Png files. Non positive values are ignored
  * @param pngHeight Set the height for Png files. Non positive values are ignored
@@ -232,8 +255,8 @@ void checkForEmergencySave(Control* control) {
  *
  * @return 0 on success, -2 on failure opening the input file, -3 on export failure
  */
-auto exportImg(const char* input, const char* output, const char* range, int pngDpi, int pngWidth, int pngHeight,
-               ExportBackgroundType exportBackground) -> int {
+auto exportImg(const char* input, const char* output, const char* range, const char* layerRange, int pngDpi,
+               int pngWidth, int pngHeight, ExportBackgroundType exportBackground) -> int {
     LoadHandler loader;
 
     Document* doc = loader.loadDocument(input);
@@ -241,13 +264,16 @@ auto exportImg(const char* input, const char* output, const char* range, int png
         g_error("%s", loader.getLastError().c_str());
     }
 
-    return ExportHelper::exportImg(doc, output, range, pngDpi, pngWidth, pngHeight, exportBackground);
+    return ExportHelper::exportImg(doc, output, range, layerRange, pngDpi, pngWidth, pngHeight, exportBackground);
 }
 
 /**
  * @brief Export the input file as pdf
  * @param input Path to the input file
  * @param output Path to the output file
+ * @param layerRange Layer range to be parsed. Will only export those layers, for every exported page.
+ *                  If a number is too high for the number of layers on a given page, it is just ignored.
+ *                  If range=nullptr, exports all layers.
  * @param range Page range to be parsed. If range=nullptr, exports the whole file
  * @param exportBackground If EXPORT_BACKGROUND_NONE, the exported pdf file has white background
  * @param progressiveMode If true, then for each xournalpp page, instead of rendering one PDF page, the page layers are
@@ -255,15 +281,15 @@ auto exportImg(const char* input, const char* output, const char* range, int png
  *
  * @return 0 on success, -2 on failure opening the input file, -3 on export failure
  */
-auto exportPdf(const char* input, const char* output, const char* range, ExportBackgroundType exportBackground,
-               bool progressiveMode) -> int {
+auto exportPdf(const char* input, const char* output, const char* range, const char* layerRange,
+               ExportBackgroundType exportBackground, bool progressiveMode) -> int {
     LoadHandler loader;
 
     Document* doc = loader.loadDocument(input);
     if (doc == nullptr) {
         g_error("%s", loader.getLastError().c_str());
     }
-    return ExportHelper::exportPdf(doc, output, range, exportBackground, progressiveMode);
+    return ExportHelper::exportPdf(doc, output, range, layerRange, exportBackground, progressiveMode);
 }
 
 struct XournalMainPrivate {
@@ -285,6 +311,7 @@ struct XournalMainPrivate {
     gboolean showVersion = false;
     int openAtPageNumber = 0;  // when no --page is used, the document opens at the page specified in the metadata file
     gchar* exportRange{};
+    gchar* exportLayerRange{};
     int exportPngDpi = -1;
     int exportPngWidth = -1;
     int exportPngHeight = -1;
@@ -302,7 +329,7 @@ void ensure_input_model_compatibility() {
     const char* imModule = g_getenv("GTK_IM_MODULE");
     if (imModule != nullptr) {
         std::string imModuleString{imModule};
-        if (imModuleString == "xim" || imModuleString == "gcin") {
+        if (imModuleString == "xim") {
             g_warning("Unsupported input method: %s", imModule);
         }
     }
@@ -401,18 +428,35 @@ void on_startup(GApplication* application, XMPtr app_data) {
 
     // Set up icons
     {
-        const auto lightIcons = app_data->gladePath->getFirstSearchPath() / "iconsColor-light";
-        const auto darkIcons = app_data->gladePath->getFirstSearchPath() / "iconsColor-dark";
+        const auto uiPath = app_data->gladePath->getFirstSearchPath();
+        const auto lightColorIcons = (uiPath / "iconsColor-light").u8string();
+        const auto darkColorIcons = (uiPath / "iconsColor-dark").u8string();
+        const auto lightLucideIcons = (uiPath / "iconsLucide-light").u8string();
+        const auto darkLucideIcons = (uiPath / "iconsLucide-dark").u8string();
 
         // icon load order from lowest priority to highest priority
-        std::vector<std::string> iconLoadOrder = {lightIcons.u8string()};
-        if (app_data->control->getSettings()->isDarkTheme()) {
-            iconLoadOrder.emplace_back(darkIcons.u8string());
-        } else {
-            iconLoadOrder.insert(iconLoadOrder.begin(), darkIcons.u8string());
+        std::vector<std::string> iconLoadOrder = {};
+        const auto chosenTheme = app_data->control->getSettings()->getIconTheme();
+        switch (chosenTheme) {
+            case ICON_THEME_COLOR:
+                iconLoadOrder = {darkLucideIcons, lightLucideIcons, darkColorIcons, lightColorIcons};
+                break;
+            case ICON_THEME_LUCIDE:
+                iconLoadOrder = {darkColorIcons, lightColorIcons, darkLucideIcons, lightLucideIcons};
+                break;
+            default:
+                g_message("Unknown icon theme!");
+        }
+        const auto darkTheme = app_data->control->getSettings()->isDarkTheme();
+        if (darkTheme) {
+            for (size_t i = 0; 2 * i + 1 < iconLoadOrder.size(); ++i) {
+                std::swap(iconLoadOrder[2 * i], iconLoadOrder[2 * i + 1]);
+            }
         }
 
-        for (auto& p: iconLoadOrder) { gtk_icon_theme_prepend_search_path(gtk_icon_theme_get_default(), p.c_str()); }
+        for (auto& p: iconLoadOrder) {
+            gtk_icon_theme_prepend_search_path(gtk_icon_theme_get_default(), p.c_str());
+        }
     }
 
     auto& globalLatexTemplatePath = app_data->control->getSettings()->latexSettings.globalTemplatePath;
@@ -457,8 +501,11 @@ void on_startup(GApplication* application, XMPtr app_data) {
             opened = app_data->control->newFile("", p);
         }
     } else if (app_data->control->getSettings()->isAutoloadMostRecent()) {
-        if (auto p = Util::fromUri(gtk_recent_info_get_uri(app_data->control->getRecentManager()->getMostRecent()))) {
-            opened = app_data->control->openFile(*p);
+        auto most_recent = app_data->control->getRecentManager()->getMostRecent();
+        if (most_recent != nullptr) {
+            if (auto p = Util::fromUri(gtk_recent_info_get_uri(most_recent))) {
+                opened = app_data->control->openFile(*p);
+            }
         }
     }
 
@@ -478,27 +525,64 @@ void on_startup(GApplication* application, XMPtr app_data) {
 }
 
 auto on_handle_local_options(GApplication*, GVariantDict*, XMPtr app_data) -> gint {
-    if (app_data->showVersion) {
-        std::cout << PROJECT_NAME << " " << PROJECT_VERSION << std::endl;
+    initCAndCoutLocales();
+
+    auto print_version = [&] {
+        if (!std::string(GIT_COMMIT_ID).empty()) {
+            std::cout << PROJECT_NAME << " " << PROJECT_VERSION << " (" << GIT_COMMIT_ID << ")" << std::endl;
+        } else {
+            std::cout << PROJECT_NAME << " " << PROJECT_VERSION << std::endl;
+        }
         std::cout << "└──libgtk: " << gtk_get_major_version() << "."  //
                   << gtk_get_minor_version() << "."                   //
                   << gtk_get_micro_version() << std::endl;            //
-        return 0;
+    };
+
+    auto exec_guarded = [&](auto&& fun, auto&& s) {
+        try {
+            printf("trying\n");
+            return fun();
+        } catch (std::exception const& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            std::cerr << "In: " << s << std::endl;
+            print_version();
+            return (1);
+        } catch (...) {
+            std::cerr << "Error: Unknown exception" << std::endl;
+            std::cerr << "In: " << s << std::endl;
+            print_version();
+            return (1);
+        }
+    };
+
+    if (app_data->showVersion) {
+        print_version();
+        return (0);
     }
 
     if (app_data->pdfFilename && app_data->optFilename && *app_data->optFilename) {
-        return exportPdf(*app_data->optFilename, app_data->pdfFilename, app_data->exportRange,
-                         app_data->exportNoBackground ? EXPORT_BACKGROUND_NONE :
-                         app_data->exportNoRuling     ? EXPORT_BACKGROUND_UNRULED :
-                                                        EXPORT_BACKGROUND_ALL,
-                         app_data->progressiveMode);
+        return exec_guarded(
+                [&] {
+                    return exportPdf(*app_data->optFilename, app_data->pdfFilename, app_data->exportRange,
+                                     app_data->exportLayerRange,
+                                     app_data->exportNoBackground ? EXPORT_BACKGROUND_NONE :
+                                     app_data->exportNoRuling     ? EXPORT_BACKGROUND_UNRULED :
+                                                                    EXPORT_BACKGROUND_ALL,
+                                     app_data->progressiveMode);
+                },
+                "exportPdf");
     }
     if (app_data->imgFilename && app_data->optFilename && *app_data->optFilename) {
-        return exportImg(*app_data->optFilename, app_data->imgFilename, app_data->exportRange, app_data->exportPngDpi,
-                         app_data->exportPngWidth, app_data->exportPngHeight,
-                         app_data->exportNoBackground ? EXPORT_BACKGROUND_NONE :
-                         app_data->exportNoRuling     ? EXPORT_BACKGROUND_UNRULED :
-                                                        EXPORT_BACKGROUND_ALL);
+        return exec_guarded(
+                [&] {
+                    return exportImg(*app_data->optFilename, app_data->imgFilename, app_data->exportRange,
+                                     app_data->exportLayerRange, app_data->exportPngDpi, app_data->exportPngWidth,
+                                     app_data->exportPngHeight,
+                                     app_data->exportNoBackground ? EXPORT_BACKGROUND_NONE :
+                                     app_data->exportNoRuling     ? EXPORT_BACKGROUND_UNRULED :
+                                                                    EXPORT_BACKGROUND_ALL);
+                },
+                "exportImg");
     }
     return -1;
 }
@@ -561,7 +645,11 @@ auto XournalMain::run(int argc, char** argv) -> int {
             GOptionEntry{"export-range", 0, 0, G_OPTION_ARG_STRING, &app_data.exportRange,
                          _("Only export the pages specified by RANGE (e.g. \"2-3,5,7-\")\n"
                            "                                 No effect without -p/--create-pdf or -i/--create-img"),
-                         nullptr},
+                         "RANGE"},
+            GOptionEntry{"export-layer-range", 0, 0, G_OPTION_ARG_STRING, &app_data.exportLayerRange,
+                         _("On export, only export the layers specified by RANGE (e.g. \"2-3,5,7-\")\n"
+                           "                                 No effect without -p/--create-pdf or -i/--create-img"),
+                         "RANGE"},
             GOptionEntry{"export-png-dpi", 0, 0, G_OPTION_ARG_INT, &app_data.exportPngDpi,
                          _("Set DPI for PNG exports. Default is 300\n"
                            "                                 No effect without -i/--create-img=foo.png"),

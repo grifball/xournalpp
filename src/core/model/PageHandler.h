@@ -11,16 +11,18 @@
 
 #pragma once
 
-#include <list>
-#include <string>
+#include <list>  // for list
 #include <vector>
 
-#include "util/Rectangle.h"
-
+#include "util/Range.h"  // for Range
 
 class Element;
 class PageListener;
 class Range;
+namespace xoj::util {
+template <class T>
+class Rectangle;
+}  // namespace xoj::util
 
 class PageHandler {
 public:
@@ -28,9 +30,15 @@ public:
     virtual ~PageHandler();
 
 public:
-    void fireRectChanged(Rectangle<double>& rect);
+    void fireRectChanged(xoj::util::Rectangle<double>& rect);
     void fireRangeChanged(Range& range);
     void fireElementChanged(Element* elem);
+    /**
+     * @brief The listed elements have been changed
+     * @param range (optional) if provided, the Range must contain the bounding boxes of the changed elements, both
+     * before and after they were changed
+     */
+    void fireElementsChanged(const std::vector<Element*>& elements, Range range = Range());
     void firePageChanged();
 
 private:
@@ -38,7 +46,7 @@ private:
     void removeListener(PageListener* l);
 
 private:
-    std::list<PageListener*> listener;
+    std::list<PageListener*> listeners;
 
     friend class PageListener;
 };

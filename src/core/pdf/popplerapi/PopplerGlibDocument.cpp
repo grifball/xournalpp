@@ -1,13 +1,17 @@
 #include "PopplerGlibDocument.h"
 
-#include <memory>
+#include <memory>    // for make_shared
+#include <optional>  // for optional
 
-#include "util/PathUtil.h"
-#include "util/Util.h"
+#include <poppler-document.h>  // for poppler_document_get_n_...
 
-#include "PopplerGlibPage.h"
-#include "PopplerGlibPageBookmarkIterator.h"
-#include "filesystem.h"
+#include "util/PathUtil.h"  // for toUri
+
+#include "PopplerGlibPage.h"                  // for PopplerGlibPage
+#include "PopplerGlibPageBookmarkIterator.h"  // for PopplerGlibPageBookmark...
+#include "filesystem.h"                       // for path
+
+class XojPdfBookmarkIterator;
 
 using std::string;
 
@@ -37,11 +41,11 @@ void PopplerGlibDocument::assign(XojPdfDocumentInterface* doc) {
     }
 }
 
-auto PopplerGlibDocument::equals(XojPdfDocumentInterface* doc) -> bool {
+auto PopplerGlibDocument::equals(XojPdfDocumentInterface* doc) const -> bool {
     return document == (dynamic_cast<PopplerGlibDocument*>(doc))->document;
 }
 
-auto PopplerGlibDocument::save(fs::path const& file, GError** error) -> bool {
+auto PopplerGlibDocument::save(fs::path const& file, GError** error) const -> bool {
     if (document == nullptr) {
         return false;
     }
@@ -78,9 +82,9 @@ auto PopplerGlibDocument::load(gpointer data, gsize length, string password, GEr
     return this->document != nullptr;
 }
 
-auto PopplerGlibDocument::isLoaded() -> bool { return this->document != nullptr; }
+auto PopplerGlibDocument::isLoaded() const -> bool { return this->document != nullptr; }
 
-auto PopplerGlibDocument::getPage(size_t page) -> XojPdfPageSPtr {
+auto PopplerGlibDocument::getPage(size_t page) const -> XojPdfPageSPtr {
     if (document == nullptr) {
         return nullptr;
     }
@@ -92,7 +96,7 @@ auto PopplerGlibDocument::getPage(size_t page) -> XojPdfPageSPtr {
     return pageptr;
 }
 
-auto PopplerGlibDocument::getPageCount() -> size_t {
+auto PopplerGlibDocument::getPageCount() const -> size_t {
     if (document == nullptr) {
         return 0;
     }
@@ -100,7 +104,7 @@ auto PopplerGlibDocument::getPageCount() -> size_t {
     return size_t(poppler_document_get_n_pages(document));
 }
 
-auto PopplerGlibDocument::getContentsIter() -> XojPdfBookmarkIterator* {
+auto PopplerGlibDocument::getContentsIter() const -> XojPdfBookmarkIterator* {
     if (document == nullptr) {
         return nullptr;
     }

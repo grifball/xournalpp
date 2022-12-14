@@ -11,20 +11,23 @@
 
 #pragma once
 
-#include <mutex>
-#include <vector>
+#include <memory>  // for unique_ptr
+#include <mutex>   // for mutex
+#include <string>  // for string
+#include <vector>  // for vector
 
-#include "gui/inputdevices/PositionInputData.h"
-#include "model/PageListener.h"
-#include "model/PageRef.h"
-#include "model/Stroke.h"
-#include "model/TexImage.h"
-#include "util/Range.h"
+#include <cairo.h>    // for cairo_t, cairo_surface_t
+#include <gdk/gdk.h>  // for GdkEventKey, GdkRectangle, GdkEventB...
 
-#include "Layout.h"
-#include "Redrawable.h"
+#include "model/PageListener.h"       // for PageListener
+#include "model/PageRef.h"            // for PageRef
+#include "util/Rectangle.h"           // for Rectangle
+#include "util/raii/CairoWrappers.h"  // for CairoSurfaceSPtr, CairoSPtr
+#include "view/Repaintable.h"
 
-class EditSelection;
+#include "Layout.h"      // for Layout
+#include "LegacyRedrawable.h"  // for Redrawable
+
 class EraseHandler;
 class InputHandler;
 class SearchControl;
@@ -34,20 +37,49 @@ class Text;
 class TextEditor;
 class VerticalToolHandler;
 class XournalView;
+class Element;
+class PositionInputData;
+class Range;
+class TexImage;
 
-class XojPageView: public Redrawable, public PageListener {
+namespace xoj::view {
+class OverlayView;
+class ToolView;
+}
+
+class XojPageView: public LegacyRedrawable, public PageListener, public xoj::view::Repaintable {
 public:
     XojPageView(XournalView* xournal, const PageRef& page);
-    virtual ~XojPageView();
+    ~XojPageView() override;
 
 public:
-    void updatePageSize(double width, double height);
+    void rerenderPage() override;
+    void rerenderRect(double x, double y, double width, double height) override;
 
-    virtual void rerenderPage();
-    virtual void rerenderRect(double x, double y, double width, double height);
+    void repaintPage() const override;
+    void repaintArea(double x1, double y1, double x2, double y2) const override;
 
-    virtual void repaintPage();
-    virtual void repaintArea(double x1, double y1, double x2, double y2);
+    // Repaintable interface
+    void flagDirtyRegion(const Range& rg) const override;
+    /**
+     * @brief This draws the ToolView directly onto the buffer, deletes the view and repaints the given range
+     *      Used to avoid blinking when a tool finished editing an element
+     */
+    void drawAndDeleteToolView(xoj::view::ToolView* v, const Range& rg) override;
+    /**
+     * @brief Simply deletes an overlay and any trace of it on the display (provided the overlay is contained in the
+     * given range)
+     */
+    void deleteOverlayView(xoj::view::OverlayView* v, const Range& rg) override;
+
+    int getDPIScaling() const override;
+    double getZoom() const override;
+    Range getVisiblePart() const override;
+
+    double getWidth() const override;
+    double getHeight() const override;
+    // End of Repaintable interface
+
 
     void setSelected(bool selected);
 
@@ -57,7 +89,7 @@ public:
 
     void endText();
 
-    bool searchTextOnPage(std::string& text, int* occures, double* top);
+    bool searchTextOnPage(const std::string& text, size_t* occurrences, double* yOfUpperMostMatch);
 
     bool onKeyPressEvent(GdkEventKey* event);
     bool onKeyReleaseEvent(GdkEventKey* event);
@@ -68,7 +100,7 @@ public:
 
     bool actionDelete();
 
-    void deleteViewBuffer();
+    void deleteViewBuffer() override;
 
     /**
      * Returns whether this PageView contains the
@@ -101,19 +133,9 @@ public:
      * Returns a reference to the XojPage belonging to
      * this PageView
      */
-    PageRef getPage();
+    const PageRef getPage() const;
 
-    XournalView* getXournal();
-
-    /**
-     * Returns the width of this PageView
-     */
-    double getWidth() const;
-
-    /**
-     * Returns the height of this XojPageView
-     */
-    double getHeight() const;
+    XournalView* getXournal() const;
 
     /**
      * Returns the width of this XojPageView as displayed
@@ -132,18 +154,18 @@ public:
      * Returns the x coordinate of this XojPageView with
      * respect to the display
      */
-    int getX() const;
+    int getX() const override;
 
     /**
      * Returns the y coordinate of this XojPageView with
      * respect to the display
      */
-    int getY() const;
+    int getY() const override;
 
     TexImage* getSelectedTex();
     Text* getSelectedText();
 
-    Rectangle<double> getRect() const;
+    xoj::util::Rectangle<double> getRect() const;
 
 public:  // event handler
     bool onButtonPressEvent(const PositionInputData& pos);
@@ -151,7 +173,7 @@ public:  // event handler
     bool onButtonDoublePressEvent(const PositionInputData& pos);
     bool onButtonTriplePressEvent(const PositionInputData& pos);
     bool onMotionNotifyEvent(const PositionInputData& pos);
-    void onMotionCancelEvent();
+    void onSequenceCancelEvent();
 
     /**
      * This event fires after onButtonPressEvent and also
@@ -165,20 +187,14 @@ public:  // event handler
      */
     bool paintPage(cairo_t* cr, GdkRectangle* rect);
 
-    /**
-     * Does the painting, called in synchronized block
-     */
-    void paintPageSync(cairo_t* cr, GdkRectangle* rect);
-
 public:  // listener
-    void rectChanged(Rectangle<double>& rect);
-    void rangeChanged(Range& range);
-    void pageChanged();
-    void elementChanged(Element* elem);
+    void rectChanged(xoj::util::Rectangle<double>& rect) override;
+    void rangeChanged(Range& range) override;
+    void pageChanged() override;
+    void elementChanged(Element* elem) override;
+    void elementsChanged(const std::vector<Element*>& elements, const Range& range) override;
 
 private:
-    void handleScrollEvent(GdkEventButton* event);
-
     void startText(double x, double y);
 
     void addRerenderRect(double x, double y, double width, double height);
@@ -195,6 +211,12 @@ private:
      */
     void showFloatingToolbox(const PositionInputData& pos);
 
+    /**
+     * Shows the PDF toolbox at the location of an input event
+     */
+    void showPdfToolbox(const PositionInputData& pos);
+
+    void deleteView(xoj::view::OverlayView* v);
 
 private:
     PageRef page;
@@ -203,10 +225,12 @@ private:
     EraseHandler* eraser = nullptr;
     InputHandler* inputHandler = nullptr;
 
+    std::vector<std::unique_ptr<xoj::view::OverlayView>> overlayViews;
+
     /**
      * The selected (while selection)
      */
-    Selection* selection = nullptr;
+    std::unique_ptr<Selection> selection;
 
     /**
      * The text editor View
@@ -220,19 +244,20 @@ private:
 
     bool selected = false;
 
-    cairo_surface_t* crBuffer = nullptr;
+    xoj::util::CairoSurfaceSPtr crBuffer;
+    std::mutex drawingMutex;
 
     bool inEraser = false;
 
     /**
      * Vertical Space
      */
-    VerticalToolHandler* verticalSpace = nullptr;
+    std::unique_ptr<VerticalToolHandler> verticalSpace;
 
     /**
      * Search handling
      */
-    SearchControl* search = nullptr;
+    std::unique_ptr<SearchControl> search;
 
     /**
      * Unixtimestam when the page was last time in the visible area
@@ -240,10 +265,8 @@ private:
     int lastVisibleTime = -1;
 
     std::mutex repaintRectMutex;
-    std::vector<Rectangle<double>> rerenderRects;
+    std::vector<xoj::util::Rectangle<double>> rerenderRects;
     bool rerenderComplete = false;
-
-    std::mutex drawingMutex;
 
     int dispX{};  // position on display - set in Layout::layoutPages
     int dispY{};
@@ -258,6 +281,7 @@ private:
     friend class BaseSelectObject;
     friend class SelectObject;
     friend class PlayObject;
+    friend class PdfFloatingToolbox;
     // only function allowed to setX(), setY(), setMappedRowCol():
     friend void Layout::layoutPages(int width, int height);
 };

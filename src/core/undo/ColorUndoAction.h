@@ -11,26 +11,28 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
+#include <vector>  // for vector
 
-#include "UndoAction.h"
+#include "model/PageRef.h"  // for PageRef
+#include "util/Color.h"     // for Color
 
+#include "UndoAction.h"  // for UndoAction
 
 class ColorUndoActionEntry;
 class Element;
 class Layer;
-class Redrawable;
+class Control;
 
 class ColorUndoAction: public UndoAction {
 public:
     ColorUndoAction(const PageRef& page, Layer* layer);
-    virtual ~ColorUndoAction();
+    ~ColorUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
-    virtual std::string getText();
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
+    std::string getText() override;
 
     void addStroke(Element* e, Color originalColor, Color newColor);
 

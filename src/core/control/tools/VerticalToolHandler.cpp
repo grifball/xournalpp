@@ -1,82 +1,63 @@
 #include "VerticalToolHandler.h"
 
-#include <cmath>
-#include <memory>
+#include <algorithm>  // for max, min, minmax
+#include <cassert>    // for assert
+#include <cmath>      // for abs
+#include <memory>     // for __shared_ptr_access
 
-#include "model/Layer.h"
-#include "undo/UndoRedoHandler.h"
-#include "view/DocumentView.h"
+#include <cairo.h>           // for cairo_fill, cairo_...
+#include <gdk/gdkkeysyms.h>  // for GDK_KEY_Control_L
+#include <glib.h>            // for g_assert, g_assert...
 
-VerticalToolHandler::VerticalToolHandler(Redrawable* view, const PageRef& page, Settings* settings, double y,
-                                         double zoom):
-        view(view), page(page), layer(this->page->getSelectedLayer()), snappingHandler(settings) {
+#include "control/tools/SnapToGridInputHandler.h"  // for SnapToGridInputHan...
+#include "gui/LegacyRedrawable.h"                  // for Redrawable
+#include "model/Element.h"                         // for Element
+#include "model/Layer.h"                           // for Layer
+#include "model/XojPage.h"                         // for XojPage
+#include "undo/MoveUndoAction.h"                   // for MoveUndoAction
+#include "util/DispatchPool.h"
+#include "view/overlays/VerticalToolView.h"
+
+class Settings;
+
+VerticalToolHandler::VerticalToolHandler(const PageRef& page, Settings* settings, double y, bool initiallyReverse):
+        page(page),
+        layer(this->page->getSelectedLayer()),
+        spacingSide(initiallyReverse ? Side::Above : Side::Below),
+        snappingHandler(settings),
+        viewPool(std::make_shared<xoj::util::DispatchPool<xoj::view::VerticalToolView>>()) {
     double ySnapped = snappingHandler.snapVertically(y, false);
     this->startY = ySnapped;
     this->endY = ySnapped;
+
+    this->adoptElements(this->spacingSide);
+}
+
+VerticalToolHandler::~VerticalToolHandler() = default;
+
+void VerticalToolHandler::adoptElements(const Side side) {
+    this->spacingSide = side;
+
+    // Return current elements back to page
+    for (Element* e: this->elements) { this->layer->addElement(e); }
+    this->elements.clear();
+
+    // Add new elements based on position
     for (Element* e: this->layer->getElements()) {
-        if (e->getY() >= y) {
+        if ((side == Side::Below && e->getY() >= this->startY) ||
+            (side == Side::Above && e->getY() + e->getElementHeight() <= this->startY)) {
             this->elements.push_back(e);
         }
     }
 
-    for (Element* e: this->elements) {
-        this->layer->removeElement(e, false);
+    for (Element* e: this->elements) { this->layer->removeElement(e, false); }
 
-        this->jumpY = std::max(this->jumpY, e->getY() + e->getElementHeight());
+    Range rg = this->ownedElementsOriginalBoundingBox;
+    this->ownedElementsOriginalBoundingBox = this->computeElementsBoundingBox();
+    rg = rg.unite(this->ownedElementsOriginalBoundingBox);
+    if (!rg.empty()) {
+        this->page->fireRangeChanged(rg);
     }
-
-    this->jumpY = this->page->getHeight() - this->jumpY;
-
-    this->crBuffer = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, this->page->getWidth() * zoom,
-                                                (this->page->getHeight() - y) * zoom);
-
-    cairo_t* cr = cairo_create(this->crBuffer);
-    cairo_scale(cr, zoom, zoom);
-    cairo_translate(cr, 0, -y);
-    DocumentView v;
-    v.drawSelection(cr, this);
-
-    cairo_destroy(cr);
-
-    view->rerenderPage();
-}
-
-VerticalToolHandler::~VerticalToolHandler() {
-    this->view = nullptr;
-
-    if (this->crBuffer) {
-        cairo_surface_destroy(this->crBuffer);
-        this->crBuffer = nullptr;
-    }
-}
-
-void VerticalToolHandler::paint(cairo_t* cr, GdkRectangle* rect, double zoom) {
-    GdkRGBA selectionColor = view->getSelectionColor();
-
-    cairo_set_line_width(cr, 1);
-
-    gdk_cairo_set_source_rgba(cr, &selectionColor);
-
-    double y = NAN;
-    double height = NAN;
-
-    if (this->startY < this->endY) {
-        y = this->startY;
-        height = this->endY - this->startY;
-    } else {
-        y = this->endY;
-        height = this->startY - this->endY;
-    }
-
-    cairo_rectangle(cr, 0, y * zoom, this->page->getWidth() * zoom, height * zoom);
-
-    cairo_stroke_preserve(cr);
-    auto applied = GdkRGBA{selectionColor.red, selectionColor.green, selectionColor.blue, 0.3};
-    gdk_cairo_set_source_rgba(cr, &applied);
-    cairo_fill(cr);
-
-    cairo_set_source_surface(cr, this->crBuffer, 0, this->endY * zoom);
-    cairo_paint(cr);
 }
 
 void VerticalToolHandler::currentPos(double x, double y) {
@@ -84,18 +65,50 @@ void VerticalToolHandler::currentPos(double x, double y) {
     if (this->endY == ySnapped) {
         return;
     }
-    double y1 = std::min(this->endY, ySnapped);
-
     this->endY = ySnapped;
-
-    this->view->repaintRect(0, y1, this->page->getWidth(), this->page->getHeight());
+    this->viewPool->dispatch(xoj::view::VerticalToolView::SET_VERTICAL_SHIFT_REQUEST, ySnapped);
 }
 
-auto VerticalToolHandler::getElements() -> std::vector<Element*>* { return &this->elements; }
+bool VerticalToolHandler::onKeyPressEvent(GdkEventKey* event) {
+    if ((event->keyval == GDK_KEY_Control_L || event->keyval == GDK_KEY_Control_R) &&
+        this->spacingSide == Side::Below) {
+        this->adoptElements(Side::Above);
+        this->viewPool->dispatch(xoj::view::VerticalToolView::SWITCH_DIRECTION_REQUEST);
+        return true;
+    }
+    return false;
+}
+
+bool VerticalToolHandler::onKeyReleaseEvent(GdkEventKey* event) {
+    if ((event->keyval == GDK_KEY_Control_L || event->keyval == GDK_KEY_Control_R) &&
+        this->spacingSide == Side::Above) {
+        this->adoptElements(Side::Below);
+        this->viewPool->dispatch(xoj::view::VerticalToolView::SWITCH_DIRECTION_REQUEST);
+        return true;
+    }
+    return false;
+}
+
+auto VerticalToolHandler::getElements() const -> const std::vector<Element*>& { return this->elements; }
+
+auto VerticalToolHandler::computeElementsBoundingBox() const -> Range {
+    Range rg;
+    for (Element* e: this->elements) {
+        rg = rg.unite(Range(e->boundingRect()));
+    }
+    return rg;
+}
 
 auto VerticalToolHandler::finalize() -> std::unique_ptr<MoveUndoAction> {
-    double dY = this->endY - this->startY;
 
+    // Erase the blue area indicating the shift
+    this->viewPool->dispatchAndClear(xoj::view::VerticalToolView::FINALIZATION_REQUEST);
+
+    if (this->elements.empty()) {
+        return nullptr;
+    }
+
+    const double dY = this->endY - this->startY;
     auto undo =
             std::make_unique<MoveUndoAction>(this->layer, this->page, &this->elements, 0, dY, this->layer, this->page);
 
@@ -104,8 +117,17 @@ auto VerticalToolHandler::finalize() -> std::unique_ptr<MoveUndoAction> {
 
         this->layer->addElement(e);
     }
+    this->elements.clear();
 
-    view->rerenderPage();
+    this->ownedElementsOriginalBoundingBox.translate(0, dY);
+    page->fireRangeChanged(this->ownedElementsOriginalBoundingBox);
 
     return undo;
+}
+
+double VerticalToolHandler::getPageWidth() const { return page->getWidth(); }
+
+auto VerticalToolHandler::createView(xoj::view::Repaintable* parent, ZoomControl* zoomControl,
+                                     const Settings* settings) const -> std::unique_ptr<xoj::view::OverlayView> {
+    return std::make_unique<xoj::view::VerticalToolView>(this, parent, zoomControl, settings);
 }

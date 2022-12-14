@@ -4,17 +4,33 @@
 
 #include "PenInputHandler.h"
 
-#include <cmath>
+#include <algorithm>  // for max, min
+#include <cmath>      // for abs, atan, sqrt
+#include <thread>     // for thread
+#include <utility>    // for move
 
-#include "control/ToolHandler.h"
-#include "control/settings/ButtonConfig.h"
-#include "gui/XournalView.h"
-#include "gui/XournalppCursor.h"
-#include "gui/widgets/XournalWidget.h"
+#include <glib.h>     // for gdouble, gint, g_message
+#include <gtk/gtk.h>  // for gtk_adjustment_get_value
 
-#include "AbstractInputHandler.h"
-#include "InputContext.h"
-#include "PositionInputData.h"
+#include "control/ToolEnums.h"                  // for TOOL_HAND, TOOL_IMAGE
+#include "control/ToolHandler.h"                // for ToolHandler
+#include "control/settings/Settings.h"          // for Settings
+#include "control/tools/CursorSelectionType.h"  // for CursorSelectionType
+#include "control/tools/EditSelection.h"        // for EditSelection
+#include "gui/Layout.h"                         // for Layout
+#include "gui/PageView.h"                       // for XojPageView
+#include "gui/XournalView.h"                    // for XournalView
+#include "gui/XournalppCursor.h"                // for XournalppCursor
+#include "gui/scroll/ScrollHandling.h"          // for ScrollHandling
+#include "gui/widgets/XournalWidget.h"          // for GtkXournal
+#include "model/Point.h"                        // for Point, Point::NO_PRES...
+#include "util/Point.h"                         // for Point
+#include "util/Util.h"                          // for execInUiThread
+
+#include "AbstractInputHandler.h"  // for AbstractInputHandler
+#include "InputContext.h"          // for InputContext
+#include "PositionInputData.h"     // for PositionInputData
+#include "config-debug.h"          // for DEBUG_INPUT
 
 #define WIDGET_SCROLL_BORDER 25
 
@@ -275,8 +291,6 @@ auto PenInputHandler::actionMotion(InputEvent const& event) -> bool {
         }
     }
 
-    bool result = false;
-
     // Update the cursor
     xournal->view->getCursor()->setInsidePage(currentPage != nullptr);
 
@@ -293,7 +307,10 @@ auto PenInputHandler::actionMotion(InputEvent const& event) -> bool {
 
         pos.pressure = this->filterPressure(pos, sequenceStartPage);
 
-        result = sequenceStartPage->onMotionNotifyEvent(pos);
+        bool result = sequenceStartPage->onMotionNotifyEvent(pos);
+
+        this->updateLastEvent(event);  // Update the last position of the input device
+        return result;
     }
 
     if (currentPage && this->penInWidget) {
@@ -301,13 +318,13 @@ auto PenInputHandler::actionMotion(InputEvent const& event) -> bool {
         PositionInputData pos = getInputDataRelativeToCurrentPage(currentPage, event);
         pos.pressure = this->filterPressure(pos, currentPage);
 
-        result = currentPage->onMotionNotifyEvent(pos);
+        bool result = currentPage->onMotionNotifyEvent(pos);
+
+        this->updateLastEvent(event);  // Update the last position of the input device
+        return result;
     }
 
-    // Update the last position of the input device
-    this->updateLastEvent(event);
-
-    return result;
+    return false;
 }
 
 auto PenInputHandler::actionEnd(InputEvent const& event) -> bool {

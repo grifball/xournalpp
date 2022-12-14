@@ -1,16 +1,18 @@
 #include "ToolPageSpinner.h"
 
-#include <utility>
+#include <utility>  // for move
 
-#include <config.h>
+#include <glib-object.h>  // for g_object_ref_sink
 
-#include "gui/GladeGui.h"
-#include "gui/widgets/SpinPageAdapter.h"
-#include "util/i18n.h"
+#include "gui/toolbarMenubar/AbstractToolItem.h"  // for AbstractToolItem
+#include "gui/widgets/SpinPageAdapter.h"          // for SpinPageAdapter
+#include "util/i18n.h"                            // for FS, _, _F, C_F
 
-ToolPageSpinner::ToolPageSpinner(GladeGui* gui, ActionHandler* handler, std::string id, ActionType type,
+class ActionHandler;
+
+ToolPageSpinner::ToolPageSpinner(ActionHandler* handler, std::string id, ActionType type,
                                  IconNameHelper iconNameHelper):
-        AbstractToolItem(std::move(id), handler, type, nullptr), gui(gui), iconNameHelper(iconNameHelper) {
+        AbstractToolItem(std::move(id), handler, type, nullptr), iconNameHelper(iconNameHelper) {
     this->pageSpinner = new SpinPageAdapter();
 }
 

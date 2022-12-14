@@ -11,20 +11,29 @@
 
 #pragma once
 
-#include <regex>
-#include <string>
-#include <vector>
+#include <cstddef>   // for size_t
+#include <optional>  // for optional
+#include <string>    // for string
+#include <vector>    // for vector
 
-#include <zip.h>
-#include <zlib.h>
+#include <glib.h>     // for gchar, GError, gsize, GMarkupPars...
+#include <zip.h>      // for zip_file_t, zip_t
+#include <zipconf.h>  // for zip_int64_t, zip_uint64_t
+#include <zlib.h>     // for gzFile
 
-#include "model/Document.h"
-#include "model/Image.h"
-#include "model/Stroke.h"
-#include "model/TexImage.h"
-#include "model/Text.h"
+#include "model/Document.h"         // for Document
+#include "model/DocumentHandler.h"  // for DocumentHandler
+#include "model/PageRef.h"          // for PageRef
+#include "util/Color.h"             // for Color
 
 #include "LoadHandlerHelper.h"
+#include "filesystem.h"  // for path
+
+class Image;
+class Layer;
+class Stroke;
+class TexImage;
+class Text;
 
 
 enum ParserPosition {
@@ -79,6 +88,7 @@ private:
     bool openFile(fs::path const& filepath);
     bool parseXml();
 
+    void fixNullPressureValues();
     static void parserText(GMarkupParseContext* context, const gchar* text, gsize textLen, gpointer userdata,
                            GError** error);
     static void parserEndElement(GMarkupParseContext* context, const gchar* elementName, gpointer userdata,
@@ -100,7 +110,13 @@ private:
 
 private:
     static std::string parseBase64(const gchar* base64, gsize length);
-    bool readZipAttachment(fs::path const& filename, gpointer& data, gsize& length);
+
+    /**
+     * Returns the contents of the zip attachment with the given file name, or
+     * nullopt if there is no such file.
+     */
+    std::optional<std::string> readZipAttachment(fs::path const& filename);
+
     fs::path getTempFileForPath(fs::path const& filename);
 
 private:

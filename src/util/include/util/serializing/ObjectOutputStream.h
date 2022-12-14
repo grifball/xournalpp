@@ -11,14 +11,13 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>      // for size_t
+#include <string>       // for string
+#include <string_view>  // for string_view
 
-#include <gtk/gtk.h>
-
+#include <glib.h>  // for GString
 
 class ObjectEncoding;
-class Serializable;
 
 class ObjectOutputStream {
 public:
@@ -36,7 +35,9 @@ public:
     void writeString(const std::string& s);
 
     void writeData(const void* data, int len, int width);
-    void writeImage(cairo_surface_t* img);
+
+    /// Writes the raw image data to the output stream.
+    void writeImage(const std::string_view& imgData);
 
     GString* getStr();
 

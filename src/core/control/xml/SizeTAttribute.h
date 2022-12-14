@@ -11,15 +11,19 @@
 
 #pragma once
 
-#include "Attribute.h"
+#include <cstddef>  // for size_t
+
+#include "Attribute.h"  // for XMLAttribute
+
+class OutputStream;
 
 class SizeTAttribute: public XMLAttribute {
 public:
     SizeTAttribute(const char* name, size_t value);
-    virtual ~SizeTAttribute();
+    ~SizeTAttribute() override;
 
 public:
-    virtual void writeOut(OutputStream* out);
+    void writeOut(OutputStream* out) override;
 
 private:
     size_t value;

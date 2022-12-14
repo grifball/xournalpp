@@ -11,22 +11,25 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "UndoAction.h"
+#include "model/PageRef.h"  // for PageRef
+
+#include "UndoAction.h"  // for UndoAction
+
+class Control;
 
 
 class InsertDeletePageUndoAction: public UndoAction {
 public:
     InsertDeletePageUndoAction(const PageRef& page, int pagePos, bool inserted);
-    virtual ~InsertDeletePageUndoAction();
+    ~InsertDeletePageUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
     bool insertPage(Control* control);

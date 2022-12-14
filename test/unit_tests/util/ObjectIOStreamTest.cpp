@@ -12,9 +12,7 @@
 #include "util/serializing/HexObjectEncoding.h"
 #include "util/serializing/ObjectInputStream.h"
 #include "util/serializing/ObjectOutputStream.h"
-
-extern const char* XML_VERSION_STR;
-
+#include "util/serializing/Serializable.h"
 
 template <typename T, unsigned N>
 std::string serializeData(const std::array<T, N>& data) {
@@ -26,7 +24,8 @@ std::string serializeData(const std::array<T, N>& data) {
 
 std::string serializeImage(cairo_surface_t* surf) {
     ObjectOutputStream outStream(new BinObjectEncoding);
-    outStream.writeImage(surf);
+    std::string data{reinterpret_cast<char*>(cairo_image_surface_get_data(surf))};
+    outStream.writeImage(data);
     auto outStr = outStream.getStr();
     return {outStr->str, outStr->len};
 }
@@ -94,30 +93,35 @@ TEST(UtilObjectIOStream, testReadImage) {
     std::mt19937 gen(4242);
     std::uniform_int_distribution<unsigned char> distrib(0, 255);
 
-    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 800, 800);
+    const cairo_format_t format = CAIRO_FORMAT_ARGB32;
+    cairo_surface_t* surface = cairo_image_surface_create(format, 800, 800);
     unsigned char* surfaceData = cairo_image_surface_get_data(surface);
 
     int width = cairo_image_surface_get_width(surface);
     int height = cairo_image_surface_get_height(surface);
 
-    for (unsigned i = 0; i < width * height * 4; ++i) { surfaceData[i] = distrib(gen); }
+    for (int i = 0; i < width * height * 4; ++i) { surfaceData[i] = distrib(gen); }
 
     std::string strSurface = serializeImage(surface);
-
 
     ObjectInputStream stream;
     EXPECT_TRUE(stream.read(&strSurface[0], (int)strSurface.size() + 1));
 
-    cairo_surface_t* outputSurface = stream.readImage();
+    std::string outputStr = stream.readImage();
+
+    cairo_surface_t* outputSurface =
+            cairo_image_surface_create_for_data(reinterpret_cast<unsigned char*>(outputStr.data()), format, width,
+                                                height, cairo_format_stride_for_width(format, width));
+    EXPECT_NE(outputSurface, nullptr);
+
     int widthOutput = cairo_image_surface_get_width(outputSurface);
     int heightOutput = cairo_image_surface_get_height(outputSurface);
     unsigned char* outputData = cairo_image_surface_get_data(surface);
 
-
     EXPECT_EQ(width, widthOutput);
     EXPECT_EQ(height, heightOutput);
 
-    for (unsigned i = 0; i < width * height * 4; ++i) { EXPECT_EQ(surfaceData[i], outputData[i]); }
+    for (int i = 0; i < width * height * 4; ++i) { EXPECT_EQ(surfaceData[i], outputData[i]); }
 
     cairo_surface_destroy(surface);
     cairo_surface_destroy(outputSurface);
@@ -303,7 +307,7 @@ TEST(UtilObjectIOStream, testReadStroke) {
 
     strokes[3].setFill(245);
 
-    strokes[4].setToolType(StrokeTool::STROKE_TOOL_ERASER);
+    strokes[4].setToolType(StrokeTool::ERASER);
 
     strokes[5].setAudioFilename("foo.mp3");
 
@@ -314,7 +318,7 @@ TEST(UtilObjectIOStream, testReadStroke) {
     strokes[6].setPressure({42., 1332.});
     strokes[6].setWidth(1337.);
     strokes[6].setFill(-1);
-    strokes[6].setToolType(StrokeTool::STROKE_TOOL_PEN);
+    strokes[6].setToolType(StrokeTool::PEN);
     strokes[6].setAudioFilename("assets/bar.mp3");
 
     // strokes[7]: invalid stroke
@@ -323,7 +327,7 @@ TEST(UtilObjectIOStream, testReadStroke) {
     strokes[7].addPoint(Point(1., 2.));
     strokes[7].setPressure({42., 1332.});
     strokes[7].setFill(-42);
-    strokes[7].setToolType((StrokeTool)42);
+    strokes[7].setToolType(static_cast<StrokeTool::Value>(42));
     strokes[7].setWidth(-1337.);
 
     size_t i = 0;

@@ -11,18 +11,17 @@
 
 #pragma once
 
-#include <exception>
-#include <string>
-#include <vector>
+#include <exception>  // for exception
+#include <string>     // for string
 
 
 class InputStreamException: public std::exception {
 public:
     InputStreamException(const std::string& message, const std::string& filename, int line);
-    virtual ~InputStreamException();
+    ~InputStreamException() override;
 
 public:
-    virtual const char* what();
+    const char* what() const noexcept override;
 
 private:
     std::string message;

@@ -1,22 +1,33 @@
 #include "ImageExport.h"
 
-#include <cmath>
-#include <utility>
+#include <cmath>    // for round
+#include <cstddef>  // for size_t
+#include <memory>   // for __shared_ptr_access, allocat...
+#include <utility>  // for move
+#include <vector>   // for vector
 
-#include <cairo-svg.h>
+#include <cairo-svg.h>  // for cairo_svg_surface_create
 
-#include "model/Document.h"
-#include "util/Util.h"
-#include "util/i18n.h"
-#include "view/PdfView.h"
+#include "control/jobs/BaseExportJob.h"  // for EXPORT_BACKGROUND_NONE, EXPO...
+#include "model/Document.h"              // for Document
+#include "model/PageRef.h"               // for PageRef
+#include "model/PageType.h"              // for PageType
+#include "model/XojPage.h"               // for XojPage
+#include "pdf/base/XojPdfPage.h"         // for XojPdfPageSPtr, XojPdfPage
+#include "util/Util.h"                   // for DPI_NORMALIZATION_FACTOR
+#include "util/i18n.h"                   // for _
+#include "view/DocumentView.h"           // for DocumentView
+#include "view/LayerView.h"
+#include "view/View.h"
+#include "view/background/BackgroundView.h"
 
-#include "ProgressListener.h"
+#include "ProgressListener.h"  // for ProgressListener
 
 using std::string;
 
 
 ImageExport::ImageExport(Document* doc, fs::path file, ExportGraphicsFormat format,
-                         ExportBackgroundType exportBackground, PageRangeVector& exportRange):
+                         ExportBackgroundType exportBackground, const PageRangeVector& exportRange):
         doc(doc), file(std::move(file)), format(format), exportBackground(exportBackground), exportRange(exportRange) {}
 
 ImageExport::~ImageExport() = default;
@@ -37,6 +48,18 @@ void ImageExport::setQualityParameter(ExportQualityCriterion criterion, int valu
 }
 
 /**
+ * @brief Select layers to export by parsing str
+ * @param rangeStr A string parsed to get a list of layers
+ */
+void ImageExport::setLayerRange(const char* rangeStr) {
+    if (rangeStr) {
+        // Use no upper bound for layer indices, as the maximal value can vary between pages
+        layerRange =
+                std::make_unique<LayerRangeVector>(ElementRange::parse(rangeStr, std::numeric_limits<size_t>::max()));
+    }
+}
+
+/**
  * @brief Get the last error message
  * @return The last error message to show to the user
  */
@@ -54,7 +77,7 @@ auto ImageExport::getLastErrorMsg() const -> string { return lastError; }
  * height (in pixels). In this case, the zoomRatio (and the DPI) is page-dependent as soon as the document has pages of
  * different sizes.
  */
-auto ImageExport::createSurface(double width, double height, int id, double zoomRatio) -> double {
+auto ImageExport::createSurface(double width, double height, size_t id, double zoomRatio) -> double {
     switch (this->format) {
         case EXPORT_GRAPHICS_PNG:
             switch (this->qualityParameter.getQualityCriterion()) {
@@ -82,7 +105,7 @@ auto ImageExport::createSurface(double width, double height, int id, double zoom
             this->cr = cairo_create(this->surface);
             break;
         default:
-            g_error("Unsupported graphics format: %i", this->format);
+            this->lastError = _("Unsupported graphics format: ") + std::to_string(this->format);
     }
     return 0.0;
 }
@@ -90,7 +113,7 @@ auto ImageExport::createSurface(double width, double height, int id, double zoom
 /**
  * Free / store the surface
  */
-auto ImageExport::freeSurface(int id) -> bool {
+auto ImageExport::freeSurface(size_t id) -> bool {
     cairo_destroy(this->cr);
 
     cairo_status_t status = CAIRO_STATUS_SUCCESS;
@@ -111,8 +134,8 @@ auto ImageExport::freeSurface(int id) -> bool {
  *
  * @return The filename
  */
-auto ImageExport::getFilenameWithNumber(int no) const -> fs::path {
-    if (no == -1) {
+auto ImageExport::getFilenameWithNumber(size_t no) const -> fs::path {
+    if (no == SINGLE_PAGE) {
         // No number to add
         return file;
     }
@@ -132,7 +155,7 @@ auto ImageExport::getFilenameWithNumber(int no) const -> fs::path {
  * @param format The format of the exported image
  * @param view A DocumentView for drawing the page
  */
-void ImageExport::exportImagePage(int pageId, int id, double zoomRatio, ExportGraphicsFormat format,
+void ImageExport::exportImagePage(size_t pageId, size_t id, double zoomRatio, ExportGraphicsFormat format,
                                   DocumentView& view) {
     doc->lock();
     PageRef page = doc->getPage(pageId);
@@ -146,15 +169,26 @@ void ImageExport::exportImagePage(int pageId, int id, double zoomRatio, ExportGr
         return;
     }
 
-    if (page->getBackgroundType().isPdfPage() && (exportBackground >= EXPORT_BACKGROUND_UNRULED)) {
+    if (page->getBackgroundType().isPdfPage() && (exportBackground != EXPORT_BACKGROUND_NONE)) {
+        // Handle the pdf page separately, to call renderForPrinting for better quality.
         auto pgNo = page->getPdfPageNr();
         XojPdfPageSPtr popplerPage = doc->getPdfPage(pgNo);
-
-        PdfView::drawPage(nullptr, popplerPage, cr, zoomRatio, page->getWidth(), page->getHeight());
+        if (!popplerPage) {
+            this->lastError = _("Error while exporting the pdf background: I cannot find the pdf page number ");
+            this->lastError += std::to_string(pgNo);
+        } else {
+            popplerPage->renderForPrinting(cr);
+        }
     }
 
-    view.drawPage(page, this->cr, true, exportBackground == EXPORT_BACKGROUND_NONE,
-                  exportBackground == EXPORT_BACKGROUND_NONE, exportBackground <= EXPORT_BACKGROUND_UNRULED);
+    if (layerRange) {
+        view.drawLayersOfPage(*layerRange, page, this->cr, true /* dont render eraseable */,
+                              true /* don't rerender the pdf background */, exportBackground == EXPORT_BACKGROUND_NONE,
+                              exportBackground <= EXPORT_BACKGROUND_UNRULED);
+    } else {
+        view.drawPage(page, this->cr, true /* dont render eraseable */, true /* don't rerender the pdf background */,
+                      exportBackground == EXPORT_BACKGROUND_NONE, exportBackground <= EXPORT_BACKGROUND_UNRULED);
+    }
 
     if (!freeSurface(id)) {
         // could not create this file...
@@ -172,15 +206,13 @@ void ImageExport::exportGraphics(ProgressListener* stateListener) {
     // the ui is blocked, so there should be no changes...
     auto count = doc->getPageCount();
 
-    bool onePage =
-            ((this->exportRange.size() == 1) && (this->exportRange[0]->getFirst() == this->exportRange[0]->getLast()));
+    bool onePage = ((this->exportRange.size() == 1) && (this->exportRange[0].first == this->exportRange[0].last));
 
-    char selectedPages[count];
-    int selectedCount = 0;
-    for (int i = 0; i < count; i++) { selectedPages[i] = 0; }
-    for (PageRangeEntry* e: this->exportRange) {
-        for (int x = e->getFirst(); x <= e->getLast(); x++) {
-            selectedPages[x] = 1;
+    std::vector<char> selectedPages(count, 0);
+    size_t selectedCount = 0;
+    for (PageRangeEntry const& e: this->exportRange) {
+        for (size_t x = e.first; x <= e.last; x++) {
+            selectedPages[x] = true;
             selectedCount++;
         }
     }
@@ -198,16 +230,16 @@ void ImageExport::exportGraphics(ProgressListener* stateListener) {
     DocumentView view;
     int current = 0;
 
-    for (int i = 0; i < count; i++) {
-        int id = i + 1;
+    for (size_t i = 0; i < count; i++) {
+        auto id = i + 1;
         if (onePage) {
-            id = -1;
+            id = SINGLE_PAGE;
         }
 
         if (selectedPages[i]) {
             stateListener->setCurrentState(current++);
 
-            exportImagePage(i, id, zoomRatio, format, view);
+            exportImagePage(i, id, zoomRatio, format, view);  // Todo(narrowing): remove cast
         }
     }
 }

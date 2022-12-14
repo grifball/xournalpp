@@ -1,19 +1,19 @@
 #include "RemoveLayerUndoAction.h"
 
-#include "control/Control.h"
-#include "control/layer/LayerController.h"
-#include "gui/XournalView.h"
-#include "model/Document.h"
-#include "model/Layer.h"
-#include "model/PageRef.h"
-#include "util/i18n.h"
+#include "control/Control.h"                // for Control
+#include "control/layer/LayerController.h"  // for LayerController
+#include "gui/MainWindow.h"                 // for MainWindow
+#include "gui/XournalView.h"                // for XournalView
+#include "model/Document.h"                 // for Document
+#include "model/Layer.h"                    // for Layer, Layer::Index
+#include "model/PageRef.h"                  // for PageRef
+#include "undo/UndoAction.h"                // for UndoAction
+#include "util/i18n.h"                      // for _
 
 RemoveLayerUndoAction::RemoveLayerUndoAction(LayerController* layerController, const PageRef& page, Layer* layer,
-                                             int layerPos):
-        UndoAction("RemoveLayerUndoAction"), layerController(layerController) {
+                                             Layer::Index layerPos):
+        UndoAction("RemoveLayerUndoAction"), layerController(layerController), layer(layer), layerPos(layerPos) {
     this->page = page;
-    this->layer = layer;
-    this->layerPos = layerPos;
 }
 
 RemoveLayerUndoAction::~RemoveLayerUndoAction() {

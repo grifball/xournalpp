@@ -11,27 +11,28 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
+#include <vector>  // for vector
 
-#include "UndoAction.h"
+#include "model/PageRef.h"  // for PageRef
 
+#include "UndoAction.h"  // for UndoAction
 
 class FontUndoActionEntry;
 class Layer;
-class Redrawable;
 class Text;
 class XojFont;
+class Control;
 
 class FontUndoAction: public UndoAction {
 public:
     FontUndoAction(const PageRef& page, Layer* layer);
-    virtual ~FontUndoAction();
+    ~FontUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
-    virtual std::string getText();
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
+    std::string getText() override;
 
     void addStroke(Text* e, XojFont& oldFont, XojFont& newFont);
 

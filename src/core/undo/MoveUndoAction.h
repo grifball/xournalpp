@@ -11,23 +11,28 @@
 
 #pragma once
 
-#include "UndoAction.h"
+#include <string>  // for string
+#include <vector>  // for vector
+
+#include "model/PageRef.h"  // for PageRef
+
+#include "UndoAction.h"  // for UndoAction
 
 class Layer;
-class Redrawable;
-class XojPage;
+class Control;
+class Element;
 
 class MoveUndoAction: public UndoAction {
 public:
     MoveUndoAction(Layer* sourceLayer, const PageRef& sourcePage, std::vector<Element*>* selected, double mx, double my,
                    Layer* targetLayer, PageRef targetPage);
-    virtual ~MoveUndoAction();
+    ~MoveUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
-    std::vector<PageRef> getPages();
-    virtual std::string getText();
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
+    std::vector<PageRef> getPages() override;
+    std::string getText() override;
 
 private:
     void switchLayer(std::vector<Element*>* entries, Layer* oldLayer, Layer* newLayer);

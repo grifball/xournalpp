@@ -1,10 +1,17 @@
 #include "FormatDialog.h"
 
-#include <config.h>
+#include <string>  // for operator==, string, basic_string
 
-#include "model/FormatDefinitions.h"
-#include "util/StringUtils.h"
-#include "util/i18n.h"
+#include <glib-object.h>  // for G_CALLBACK, g_signal_connect
+#include <glib.h>         // for g_list_free, GList
+
+#include "control/settings/Settings.h"  // for Settings
+#include "model/FormatDefinitions.h"    // for FormatUnits, XOJ_UNITS, XOJ_U...
+#include "util/GListView.h"             // for GListView, GListView<>::GList...
+#include "util/StringUtils.h"           // for StringUtils
+#include "util/i18n.h"                  // for _
+
+class GladeSearchpath;
 
 
 FormatDialog::FormatDialog(GladeSearchpath* gladeSearchPath, Settings* settings, double width, double height):
@@ -84,25 +91,16 @@ FormatDialog::FormatDialog(GladeSearchpath* gladeSearchPath, Settings* settings,
 
 void FormatDialog::loadPageFormats() {
     GList* default_sizes = gtk_paper_size_get_paper_sizes(false);
-
-    GList* next = nullptr;
-    for (GList* l = default_sizes; l != nullptr; l = next) {
-        // Copy next here, because the entry may be deleted
-        next = l->next;
-        auto* s = static_cast<GtkPaperSize*>(l->data);
-
-        std::string name = gtk_paper_size_get_name(s);
+    for (auto& s: GListView<GtkPaperSize>(default_sizes)) {
+        std::string name = gtk_paper_size_get_name(&s);
         if (name == GTK_PAPER_NAME_A3 || name == GTK_PAPER_NAME_A4 || name == GTK_PAPER_NAME_A5 ||
             name == GTK_PAPER_NAME_LETTER || name == GTK_PAPER_NAME_LEGAL) {
-            paperSizes.emplace_back(s, gtk_paper_size_free);
-            default_sizes = g_list_delete_link(default_sizes, l);
+            paperSizes.emplace_back(&s, gtk_paper_size_free);
             continue;
         }
-
-        gtk_paper_size_free(s);
-        default_sizes = g_list_delete_link(default_sizes, l);
+        gtk_paper_size_free(&s);
     }
-
+    g_list_free(default_sizes);
     // Name format: ftp://ftp.pwg.org/pub/pwg/candidates/cs-pwgmsn10-20020226-5101.1.pdf
     paperSizes.emplace_back(gtk_paper_size_new("custom_16x9_320x180mm"), gtk_paper_size_free);
     paperSizes.emplace_back(gtk_paper_size_new("custom_4x3_320x240mm"), gtk_paper_size_free);

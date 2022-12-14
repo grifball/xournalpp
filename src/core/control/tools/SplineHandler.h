@@ -11,13 +11,24 @@
 
 #pragma once
 
-#include "model/Point.h"
-#include "view/DocumentView.h"
+#include <optional>  // for optional
+#include <vector>    // for vector
 
-#include "InputHandler.h"
-#include "SnapToGridInputHandler.h"
+#include <cairo.h>    // for cairo_t
+#include <gdk/gdk.h>  // for GdkEventKey
+#include <glib.h>     // for guint32
 
-class SplineSegment;
+#include "model/PageRef.h"   // for PageRef
+#include "model/Point.h"     // for Point
+#include "util/Rectangle.h"  // for Rectangle
+#include "view/StrokeView.h"
+
+#include "InputHandler.h"            // for InputHandler
+#include "SnapToGridInputHandler.h"  // for SnapToGridInputHandler
+
+class PositionInputData;
+class LegacyRedrawable;
+class XournalView;
 
 /**
  * @brief A class to handle splines
@@ -35,23 +46,23 @@ class SplineSegment;
 
 class SplineHandler: public InputHandler {
 public:
-    SplineHandler(XournalView* xournal, XojPageView* redrawable, const PageRef& page);
-    virtual ~SplineHandler();
+    SplineHandler(Control* control, LegacyRedrawable* redrawable, const PageRef& page);
+    ~SplineHandler() override;
 
-    void draw(cairo_t* cr);
+    void draw(cairo_t* cr) override;
 
-    void onMotionCancelEvent();
-    bool onMotionNotifyEvent(const PositionInputData& pos);
-    void onButtonReleaseEvent(const PositionInputData& pos);
-    void onButtonPressEvent(const PositionInputData& pos);
-    void onButtonDoublePressEvent(const PositionInputData& pos);
-    virtual bool onKeyEvent(GdkEventKey* event);
+    void onSequenceCancelEvent() override;
+    bool onMotionNotifyEvent(const PositionInputData& pos, double zoom) override;
+    void onButtonReleaseEvent(const PositionInputData& pos, double zoom) override;
+    void onButtonPressEvent(const PositionInputData& pos, double zoom) override;
+    void onButtonDoublePressEvent(const PositionInputData& pos, double zoom) override;
+    bool onKeyEvent(GdkEventKey* event) override;
 
 private:
     void finalizeSpline();
     void movePoint(double dx, double dy);
     void updateStroke();
-    Rectangle<double> computeRepaintRectangle() const;
+    xoj::util::Rectangle<double> computeRepaintRectangle() const;
 
     // to filter out short strokes (usually the user tapping on the page to select it)
     guint32 startStrokeTime{};
@@ -61,18 +72,21 @@ private:
 private:
     std::vector<Point> knots{};
     std::vector<Point> tangents{};
+    std::optional<xoj::view::StrokeView> strokeView;
+
     bool isButtonPressed = false;
     SnapToGridInputHandler snappingHandler;
+
+    LegacyRedrawable* redrawable;
 
 public:
     void addKnot(const Point& p);
     void addKnotWithTangent(const Point& p, const Point& t);
     void modifyLastTangent(const Point& t);
     void deleteLastKnotWithTangent();
-    int getKnotCount() const;
+    size_t getKnotCount() const;
 
 protected:
-    DocumentView view;
     Point currPoint;
     Point buttonDownPoint;  // used for tapSelect and filtering - never snapped to grid. See startPoint defined in
                             // derived classes such as EllipseHandler.

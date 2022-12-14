@@ -11,9 +11,20 @@
 
 #pragma once
 
-#include <gtk/gtk.h>
+#include <memory>  // for unique_ptr
 
-#include "util/Rectangle.h"
+#include <glib-object.h>  // for G_TYPE_CHECK_INSTANCE_CAST, G_TYPE_C...
+#include <glib.h>         // for G_BEGIN_DECLS, G_END_DECLS
+#include <gtk/gtk.h>      // for GtkWidget, GtkWidgetClass
+
+#include "view/SetsquareView.h"  // for SetsquareView
+
+namespace xoj::util {
+template <class T>
+class Rectangle;
+}  // namespace xoj::util
+struct _GtkXournal;
+struct _GtkXournalClass;
 
 G_BEGIN_DECLS
 
@@ -22,6 +33,7 @@ G_BEGIN_DECLS
 #define GTK_IS_XOURNAL(obj) G_TYPE_CHECK_INSTANCE_TYPE(obj, gtk_xournal_get_type())
 
 class EditSelection;
+class SetsquareView;
 class Layout;
 class XojPageView;
 class ScrollHandling;
@@ -45,11 +57,6 @@ struct _GtkXournal {
      */
     ScrollHandling* scrollHandling;
 
-    /**
-     * Visible area
-     */
-    int x;
-    int y;
 
     Layout* layout;
 
@@ -58,6 +65,11 @@ struct _GtkXournal {
      * Selected content, if any
      */
     EditSelection* selection;
+
+    /**
+     * Setsquare, if active
+     */
+    std::unique_ptr<SetsquareView> setsquareView;
 
     /**
      * Input handling
@@ -79,6 +91,6 @@ void gtk_xournal_scroll_relative(GtkWidget* widget, double x, double y);
 
 void gtk_xournal_repaint_area(GtkWidget* widget, int x1, int y1, int x2, int y2);
 
-Rectangle<double>* gtk_xournal_get_visible_area(GtkWidget* widget, XojPageView* p);
+xoj::util::Rectangle<double>* gtk_xournal_get_visible_area(GtkWidget* widget, const XojPageView* p);
 
 G_END_DECLS

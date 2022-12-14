@@ -1,14 +1,18 @@
 #include "AudioElement.h"
 
-#include <utility>
+#include <utility>  // for move
+
+#include "model/Element.h"                        // for Element, ElementType
+#include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
 
 AudioElement::AudioElement(ElementType type): Element(type) {}
 
 AudioElement::~AudioElement() { this->timestamp = 0; }
 
-void AudioElement::setAudioFilename(std::string fn) { this->audioFilename = std::move(fn); }
+void AudioElement::setAudioFilename(fs::path fn) { this->audioFilename = std::move(fn); }
 
-auto AudioElement::getAudioFilename() const -> std::string { return this->audioFilename; }
+auto AudioElement::getAudioFilename() const -> fs::path const& { return this->audioFilename; }
 
 void AudioElement::setTimestamp(size_t timestamp) { this->timestamp = timestamp; }
 
@@ -19,7 +23,7 @@ void AudioElement::serialize(ObjectOutputStream& out) const {
 
     this->Element::serialize(out);
 
-    out.writeString(this->audioFilename);
+    out.writeString(this->audioFilename.u8string());
     out.writeSizeT(this->timestamp);
 
     out.endObject();

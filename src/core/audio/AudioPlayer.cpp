@@ -1,12 +1,26 @@
 #include "AudioPlayer.h"
 
-#include "control/Control.h"
+#include "audio/AudioQueue.h"         // for AudioQueue
+#include "audio/DeviceInfo.h"         // for DeviceInfo
+#include "audio/PortAudioConsumer.h"  // for PortAudioConsumer
+#include "audio/VorbisProducer.h"     // for VorbisProducer
+#include "control/Control.h"          // for Control
+#include "gui/MainWindow.h"           // for MainWindow
+
+class Settings;
+
+AudioPlayer::AudioPlayer(Control& control, Settings& settings):
+        control(control),
+        settings(settings),
+        audioQueue(std::make_unique<AudioQueue<float>>()),
+        portAudioConsumer(std::make_unique<PortAudioConsumer>(*this, *audioQueue)),
+        vorbisProducer(std::make_unique<VorbisProducer>(*audioQueue)) {}
 
 AudioPlayer::~AudioPlayer() { this->stop(); }
 
-auto AudioPlayer::start(const std::string& filename, unsigned int timestamp) -> bool {
+auto AudioPlayer::start(fs::path const& file, unsigned int timestamp) -> bool {
     // Start the producer for reading the data
-    bool status = this->vorbisProducer->start(filename, timestamp);
+    bool status = this->vorbisProducer->start(file, timestamp);
 
     // Start playing
     if (status) {

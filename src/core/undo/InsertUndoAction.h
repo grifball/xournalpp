@@ -11,22 +11,27 @@
 
 #pragma once
 
-#include "UndoAction.h"
+#include <string>  // for string
+#include <vector>  // for vector
+
+#include "model/PageRef.h"  // for PageRef
+
+#include "UndoAction.h"  // for UndoAction
 
 class Element;
 class Layer;
-class Redrawable;
+class Control;
 
 class InsertUndoAction: public UndoAction {
 public:
     InsertUndoAction(const PageRef& page, Layer* layer, Element* element);
-    virtual ~InsertUndoAction();
+    ~InsertUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
     Layer* layer;
@@ -36,13 +41,13 @@ private:
 class InsertsUndoAction: public UndoAction {
 public:
     InsertsUndoAction(const PageRef& page, Layer* layer, std::vector<Element*> elements);
-    virtual ~InsertsUndoAction();
+    ~InsertsUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
     Layer* layer;

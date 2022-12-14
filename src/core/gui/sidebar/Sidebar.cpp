@@ -1,17 +1,22 @@
 #include "Sidebar.h"
 
-#include <config-features.h>
+#include <memory>  // for allocator, make...
+#include <string>  // for string
 
-#include "control/Control.h"
-#include "control/PdfCache.h"
-#include "gui/GladeGui.h"
-#include "gui/sidebar/indextree/SidebarIndexPage.h"
-#include "gui/sidebar/previews/layer/SidebarPreviewLayers.h"
-#include "gui/sidebar/previews/page/SidebarPreviewPages.h"
-#include "model/Document.h"
-#include "model/XojPage.h"
+#include <gdk/gdk.h>      // for gdk_display_get...
+#include <glib-object.h>  // for G_CALLBACK, g_s...
 
-Sidebar::Sidebar(GladeGui* gui, Control* control): toolbar(this, gui), control(control), gui(gui) {
+#include "control/Control.h"                          // for Control
+#include "control/settings/Settings.h"                // for Settings
+#include "gui/GladeGui.h"                             // for GladeGui
+#include "gui/sidebar/AbstractSidebarPage.h"          // for AbstractSidebar...
+#include "gui/sidebar/indextree/SidebarIndexPage.h"   // for SidebarIndexPage
+#include "previews/layer/SidebarLayersContextMenu.h"  // for SidebarLayersCo...
+#include "previews/layer/SidebarPreviewLayers.h"      // for SidebarPreviewL...
+#include "previews/page/SidebarPreviewPages.h"        // for SidebarPreviewP...
+#include "util/Util.h"                                // for npos
+
+Sidebar::Sidebar(GladeGui* gui, Control* control): control(control), gui(gui), toolbar(this, gui) {
     this->tbSelectPage = GTK_TOOLBAR(gui->get("tbSelectSidebarPage"));
     this->buttonCloseSidebar = gui->get("buttonCloseSidebar");
 
@@ -25,8 +30,9 @@ Sidebar::Sidebar(GladeGui* gui, Control* control): toolbar(this, gui), control(c
 void Sidebar::initPages(GtkWidget* sidebarContents, GladeGui* gui) {
     addPage(new SidebarIndexPage(this->control, &this->toolbar));
     addPage(new SidebarPreviewPages(this->control, this->gui, &this->toolbar));
-    addPage(new SidebarPreviewLayers(this->control, this->gui, &this->toolbar, false));
-    addPage(new SidebarPreviewLayers(this->control, this->gui, &this->toolbar, true));
+    auto layersContextMenu = std::make_shared<SidebarLayersContextMenu>(this->gui, &this->toolbar);
+    addPage(new SidebarPreviewLayers(this->control, this->gui, &this->toolbar, false, layersContextMenu));
+    addPage(new SidebarPreviewLayers(this->control, this->gui, &this->toolbar, true, layersContextMenu));
 
     // Init toolbar with icons
 

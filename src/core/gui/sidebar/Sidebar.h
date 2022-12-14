@@ -11,13 +11,14 @@
 
 #pragma once
 
-#include <list>
+#include <cstddef>  // for size_t
+#include <list>     // for list
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkWidget, Gtk...
 
-#include "gui/sidebar/previews/base/SidebarToolbar.h"
-#include "model/DocumentChangeType.h"
-#include "model/DocumentListener.h"
+#include "gui/sidebar/previews/base/SidebarToolbar.h"  // for SidebarActions
+#include "model/DocumentChangeType.h"                  // for DocumentChange...
+#include "model/DocumentListener.h"                    // for DocumentListener
 
 class AbstractSidebarPage;
 class Control;
@@ -27,7 +28,7 @@ class SidebarPageButton;
 class Sidebar: public DocumentListener, public SidebarToolbarActionListener {
 public:
     Sidebar(GladeGui* gui, Control* control);
-    virtual ~Sidebar();
+    ~Sidebar() override;
 
 private:
     void initPages(GtkWidget* sidebarContents, GladeGui* gui);
@@ -38,7 +39,7 @@ public:
     /**
      * Called when an action is performed
      */
-    virtual void actionPerformed(SidebarActions action);
+    void actionPerformed(SidebarActions action) override;
 
 public:
     /**
@@ -75,7 +76,7 @@ public:
 
 public:
     // DocumentListener interface
-    virtual void documentChanged(DocumentChangeType type);
+    void documentChanged(DocumentChangeType type) override;
 
 private:
     /**

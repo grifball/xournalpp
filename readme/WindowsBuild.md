@@ -1,72 +1,58 @@
-# Xournal++ Windows Build
+# Windows Build
 
-![Screenshot](main-win.png?raw=true "Xournal++ Screenshot on Win10")
+![Screenshot](./main-win.png?raw=true "Xournal++ Screenshot on Win10")
 
-## Preparation
+## Install Dependencies
+
+Xournal++ requires the following software to build:
+
 1. Install [MSYS2](https://www.msys2.org/) to a short path without spaces.
 2. Install [NSIS](https://nsis.sourceforge.io/Download) to the standard directory.
 3. Start Mingw-w64 64bit. (Always check if it says **MINGW64** - not 32bit and not MSYS2)
 
-This will open a console. All following steps happen in this console.
+This will open the MINGW64 console. All following steps in this document happen in this console, unless specified otherwise.
 
-## Update MSYS2
+### Update MSYS2
 
-Do this multiple times, close the Terminal after each update
-```bash
+Open a MSYS2 console (**not** the MINGW64 console -- close them if you have any open) and run the following command twice. Reopen the MSYS2 console each time you run the command.
+
+```sh
 pacman -Syuu
 ```
 
-## Install GIT
+### Install Build tools
 
-```bash
-pacman -S git
+```sh
+pacman -S \
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-ninja \
+  mingw-w64-x86_64-imagemagick \
+  patch \
+  make \
+  git
 ```
 
-## Install Build tools
+If prompted, confirm or use all default values.
 
-```bash
-pacman -S mingw-w64-x86_64-toolchain \
-          mingw-w64-x86_64-cmake \
-          mingw-w64-x86_64-ninja \
-          patch \
-          make \
-          mingw-w64-x86_64-imagemagick
-```
--> press enter multiple times / confirm all default values
+### Install dependencies
 
-## Install dependencies
-
-```bash
-pacman -S mingw-w64-x86_64-poppler \
-          mingw-w64-x86_64-gtk3 \
-          mingw-w64-x86_64-libsndfile \
-          mingw-w64-x86_64-libzip \
-          mingw-w64-x86_64-lua
-```
--> press enter multiple times / confirm all default values
-
-## Get sources
-
-```bash
-git clone https://github.com/xournalpp/xournalpp.git
-cd xournalpp/
+```sh
+pacman -S \
+  mingw-w64-x86_64-poppler \
+  mingw-w64-x86_64-gtk3 \
+  mingw-w64-x86_64-libsndfile \
+  mingw-w64-x86_64-libzip \
+  mingw-w64-x86_64-lua \
+  mingw-w64-x86_64-portaudio
 ```
 
-## Install sndfile / PortAudio
+If prompted, confirm or use all default values.
 
-Build/Install portaudio with
-```bash
-windows-setup/build-portaudio.sh
-```
+## Building and Testing
 
-## Build Xournal++
+See [Compile.md](./Compile.md)
 
-```bash
-mkdir build
-cd build/
-cmake ..
-cmake --build .
-```
 ## Modify Path Environment Variable
 
 Add `C:\msys64\mingw64\bin` and `C:\msys64\usr\bin` to the top of 
@@ -74,15 +60,16 @@ your PATH environment variable in the Windows Advanced system
 settings (assuming default installation folder for MSYS2). 
 
 You can now run Xournal++ with
-```bash
+```sh
 ./xournalpp.exe
 ```
 or package it in an installer (see below).
 
 ## Packaging and Setup
+
 Create the installer with
-```bash
-windows-setup/package.sh
+```sh
+./windows-setup/package.sh
 ```
 
 The installer will be located at `windows-setup/xournalpp-setup.exe`. This

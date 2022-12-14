@@ -11,17 +11,15 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <gdk/gdk.h>  // for GdkDevice
+#include <glib.h>     // for gint64
+#include <gtk/gtk.h>  // for GtkWidget
 
-#include <gdk/gdk.h>
-
-#include "InputContext.h"
-#include "InputEvents.h"
-
+#include "InputEvents.h"  // for InputDeviceClass
 
 class Settings;
 class TouchDisableInterface;
+class InputContext;
 
 class HandRecognition {
 public:
@@ -33,11 +31,6 @@ public:
      * Reload settings
      */
     void reload();
-
-    /**
-     * An event from a device occurred
-     */
-    void event(GdkDevice* device);
 
     /**
      * An event from a device occurred
@@ -102,11 +95,6 @@ private:
      * Implementation for touch disabling
      */
     TouchDisableInterface* touchImpl = nullptr;
-
-    /**
-     * XournalView
-     */
-    GtkWidget* widget;
 
     /**
      * InputContext

@@ -1,19 +1,41 @@
 #include "SplineHandler.h"
 
-#include <cmath>
-#include <memory>
+#include <algorithm>  // for max, max_element
+#include <cmath>      // for pow, M_PI, cos, sin
+#include <cstddef>    // for size_t
+#include <list>       // for list, operator!=
+#include <memory>     // for allocator_traits<>...
+#include <optional>   // for optional
 
-#include "control/Control.h"
-#include "control/layer/LayerController.h"
-#include "gui/XournalView.h"
-#include "gui/XournalppCursor.h"
-#include "model/SplineSegment.h"
-#include "undo/InsertUndoAction.h"
+#include <gdk/gdkkeysyms.h>  // for GDK_KEY_Escape
+
+#include "control/Control.h"                       // for Control
+#include "control/ToolEnums.h"                     // for DRAWING_TYPE_SPLINE
+#include "control/ToolHandler.h"                   // for ToolHandler
+#include "control/layer/LayerController.h"         // for LayerController
+#include "control/settings/Settings.h"             // for Settings
+#include "control/tools/InputHandler.h"            // for InputHandler
+#include "control/tools/SnapToGridInputHandler.h"  // for SnapToGridInputHan...
+#include "control/zoom/ZoomControl.h"
+#include "gui/LegacyRedrawable.h"                  // for LegacyRedrawable
+#include "gui/XournalView.h"                       // for XournalView
+#include "gui/XournalppCursor.h"                   // for XournalppCursor
+#include "gui/inputdevices/PositionInputData.h"    // for PositionInputData
+#include "model/Layer.h"                           // for Layer
+#include "model/SplineSegment.h"                   // for SplineSegment
+#include "model/Stroke.h"                          // for Stroke
+#include "model/XojPage.h"                         // for XojPage
+#include "undo/InsertUndoAction.h"                 // for InsertUndoAction
+#include "undo/UndoRedoHandler.h"                  // for UndoRedoHandler
+#include "view/StrokeView.h"                       // for StrokeView
+#include "view/View.h"                             // for Context
+
+using xoj::util::Rectangle;
 
 guint32 SplineHandler::lastStrokeTime;  // persist for next stroke
 
-SplineHandler::SplineHandler(XournalView* xournal, XojPageView* redrawable, const PageRef& page):
-        InputHandler(xournal, redrawable, page), snappingHandler(xournal->getControl()->getSettings()) {}
+SplineHandler::SplineHandler(Control* control, LegacyRedrawable* redrawable, const PageRef& page):
+        InputHandler(control, page), snappingHandler(control->getSettings()), redrawable(redrawable) {}
 
 SplineHandler::~SplineHandler() = default;
 
@@ -25,9 +47,7 @@ void SplineHandler::draw(cairo_t* cr) {
         return;
     }
 
-    double zoom = xournal->getZoom();
-    double radius = RADIUS_WITHOUT_ZOOM / zoom;
-    if (xournal->getControl()->getToolHandler()->getDrawingType() != DRAWING_TYPE_SPLINE) {
+    if (control->getToolHandler()->getDrawingType() != DRAWING_TYPE_SPLINE) {
         g_warning("Drawing type is not spline any longer");
         this->finalizeSpline();
         this->knots.clear();
@@ -35,10 +55,10 @@ void SplineHandler::draw(cairo_t* cr) {
         return;
     }
 
-    int dpiScaleFactor = xournal->getDpiScaleFactor();
-    cairo_scale(cr, zoom * dpiScaleFactor, zoom * dpiScaleFactor);
-
+    double zoom = control->getZoomControl()->getZoom();
+    double radius = RADIUS_WITHOUT_ZOOM / zoom;
     double lineWidth = LINE_WIDTH_WITHOUT_ZOOM / zoom;
+
     cairo_set_line_width(cr, lineWidth);
     const Point& firstKnot = this->knots.front();
     const Point& lastKnot = this->knots.back();
@@ -91,7 +111,8 @@ void SplineHandler::draw(cairo_t* cr) {
     // create stroke and draw spline
     this->updateStroke();
     if (this->getKnotCount() > 1) {
-        view.drawStroke(cr, stroke);
+        auto context = xoj::view::Context::createDefault(cr);
+        strokeView->draw(context);
     }
 }
 
@@ -103,8 +124,8 @@ constexpr double MIN_TANGENT_LENGTH = 1.0;
 
 auto SplineHandler::onKeyEvent(GdkEventKey* event) -> bool {
     if (!stroke ||
-        event->type != GDK_KEY_PRESS && event->keyval != GDK_KEY_Escape) {  // except for escape key only act on key
-                                                                            // press event, not on key release event
+        (event->type != GDK_KEY_PRESS && event->keyval != GDK_KEY_Escape)) {  // except for escape key only act on key
+                                                                              // press event, not on key release event
         return false;
     }
 
@@ -176,12 +197,11 @@ auto SplineHandler::onKeyEvent(GdkEventKey* event) -> bool {
     return false;
 }
 
-auto SplineHandler::onMotionNotifyEvent(const PositionInputData& pos) -> bool {
+auto SplineHandler::onMotionNotifyEvent(const PositionInputData& pos, double zoom) -> bool {
     if (!stroke || this->knots.empty()) {
         return false;
     }
 
-    double zoom = xournal->getZoom();
     Rectangle<double> rect = this->computeRepaintRectangle();
     if (this->isButtonPressed) {
         Point newTangent = Point(pos.x / zoom - this->currPoint.x, pos.y / zoom - this->currPoint.y);
@@ -199,19 +219,15 @@ auto SplineHandler::onMotionNotifyEvent(const PositionInputData& pos) -> bool {
     return true;
 }
 
-void SplineHandler::onMotionCancelEvent() {
-    delete stroke;
-    stroke = nullptr;
-}
+void SplineHandler::onSequenceCancelEvent() { stroke.reset(); }
 
-void SplineHandler::onButtonReleaseEvent(const PositionInputData& pos) {
+void SplineHandler::onButtonReleaseEvent(const PositionInputData& pos, double zoom) {
     isButtonPressed = false;
 
     if (!stroke) {
         return;
     }
 
-    Control* control = xournal->getControl();
     Settings* settings = control->getSettings();
 
     if (settings->getStrokeFilterEnabled() && this->getKnotCount() < 2)  // Note: Mostly same as in BaseStrokeHandler
@@ -222,10 +238,9 @@ void SplineHandler::onButtonReleaseEvent(const PositionInputData& pos) {
         settings->getStrokeFilter(&strokeFilterIgnoreTime, &strokeFilterIgnoreLength, &strokeFilterSuccessiveTime);
         double dpmm = settings->getDisplayDpi() / 25.4;
 
-        double zoom = xournal->getZoom();
         double lengthSqrd = (pow(((pos.x / zoom) - (this->buttonDownPoint.x)), 2) +
                              pow(((pos.y / zoom) - (this->buttonDownPoint.y)), 2)) *
-                            pow(xournal->getZoom(), 2);
+                            pow(zoom, 2);
 
         if (lengthSqrd < pow((strokeFilterIgnoreLength * dpmm), 2) &&
             pos.timestamp - this->startStrokeTime < strokeFilterIgnoreTime) {
@@ -238,7 +253,7 @@ void SplineHandler::onButtonReleaseEvent(const PositionInputData& pos) {
 
                 SplineHandler::lastStrokeTime = pos.timestamp;
 
-                xournal->getCursor()->updateCursor();
+                control->getCursor()->updateCursor();
 
                 return;
             }
@@ -247,9 +262,8 @@ void SplineHandler::onButtonReleaseEvent(const PositionInputData& pos) {
     }
 }
 
-void SplineHandler::onButtonPressEvent(const PositionInputData& pos) {
+void SplineHandler::onButtonPressEvent(const PositionInputData& pos, double zoom) {
     isButtonPressed = true;
-    double zoom = xournal->getZoom();
     double radius = RADIUS_WITHOUT_ZOOM / zoom;
     this->buttonDownPoint = Point(pos.x / zoom, pos.y / zoom);
     this->currPoint = Point(pos.x / zoom, pos.y / zoom);
@@ -261,7 +275,9 @@ void SplineHandler::onButtonPressEvent(const PositionInputData& pos) {
     }
 
     if (!stroke) {
-        createStroke(this->currPoint);
+        stroke = createStroke(this->control);
+        stroke->addPoint(this->currPoint);
+        strokeView.emplace(stroke.get());
         this->addKnot(this->currPoint);
         this->redrawable->rerenderRect(this->currPoint.x - radius, this->currPoint.y - radius, 2 * radius, 2 * radius);
     } else {
@@ -278,7 +294,7 @@ void SplineHandler::onButtonPressEvent(const PositionInputData& pos) {
     this->startStrokeTime = pos.timestamp;
 }
 
-void SplineHandler::onButtonDoublePressEvent(const PositionInputData& pos) { finalizeSpline(); }
+void SplineHandler::onButtonDoublePressEvent(const PositionInputData& pos, double zoom) { finalizeSpline(); }
 
 void SplineHandler::movePoint(double dx, double dy) {
     // move last non dynamically changing point
@@ -295,32 +311,28 @@ void SplineHandler::finalizeSpline() {
 
     if (this->getKnotCount() < 2) {  // This is not a valid spline
         Rectangle<double> rect = this->computeRepaintRectangle();
+        stroke.reset();
         this->redrawable->repaintRect(rect.x, rect.y, rect.width, rect.height);
 
-        delete stroke;
-        stroke = nullptr;
         return;
     }
 
     this->updateStroke();
+    Rectangle<double> rect = this->computeRepaintRectangle();
 
     stroke->freeUnusedPointItems();
-    Control* control = xournal->getControl();
     control->getLayerController()->ensureLayerExists(page);
 
     Layer* layer = page->getSelectedLayer();
 
     UndoRedoHandler* undo = control->getUndoRedoHandler();
-    undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke));
+    undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke.get()));
 
-    layer->addElement(stroke);
+    layer->addElement(stroke.release());
 
-    Rectangle<double> rect = this->computeRepaintRectangle();
     this->redrawable->rerenderRect(rect.x, rect.y, rect.width, rect.height);
 
-    stroke = nullptr;
-
-    xournal->getCursor()->updateCursor();
+    control->getCursor()->updateCursor();
 }
 
 void SplineHandler::addKnot(const Point& p) { addKnotWithTangent(p, Point(0, 0)); }
@@ -339,7 +351,7 @@ void SplineHandler::deleteLastKnotWithTangent() {
     }
 }
 
-auto SplineHandler::getKnotCount() const -> int {
+auto SplineHandler::getKnotCount() const -> size_t {
     if (this->knots.size() != this->tangents.size()) {
         g_warning("number of knots and tangents differ");
     }
@@ -370,7 +382,7 @@ void SplineHandler::updateStroke() {
 }
 
 auto SplineHandler::computeRepaintRectangle() const -> Rectangle<double> {
-    double zoom = xournal->getZoom();
+    double zoom = control->getZoomControl()->getZoom();  // todo(bhennion) in splitting: remove zoom dependence
     double radius = RADIUS_WITHOUT_ZOOM / zoom;
     std::vector<double> xCoords = {};
     std::vector<double> yCoords = {};

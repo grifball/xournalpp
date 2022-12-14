@@ -11,17 +11,24 @@
 
 #pragma once
 
-#include <atomic>
+#include <atomic>   // for atomic_bool
+#include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
+#include <string>   // for string
 
-#include "control/layer/LayerCtrlListener.h"
-#include "model/Font.h"
+#include <gdk/gdk.h>      // for GdkDragContext, GdkEvent
+#include <glib-object.h>  // for GClosure
+#include <glib.h>         // for gpointer, gboolean, gint
+#include <gtk/gtk.h>      // for GtkWidget, GtkCheckMenu...
 
-#include "FloatingToolbox.h"
-#include "GladeGui.h"
+#include "control/layer/LayerCtrlListener.h"  // for LayerCtrlListener
+#include "model/Font.h"                       // for XojFont
+#include "util/raii/GObjectSPtr.h"
+
+#include "GladeGui.h"  // for GladeGui
 
 class Control;
 class Layout;
-class MainWindow;
 class SpinPageAdapter;
 class ScrollHandling;
 class ToolMenuHandler;
@@ -29,25 +36,27 @@ class ToolbarData;
 class ToolbarModel;
 class XournalView;
 class MainWindowToolbarMenu;
+class PdfFloatingToolbox;
+class FloatingToolbox;
+class GladeSearchpath;
 
 class MainWindow: public GladeGui, public LayerCtrlListener {
 public:
     MainWindow(GladeSearchpath* gladeSearchPath, Control* control);
-    virtual ~MainWindow();
+    ~MainWindow() override;
 
     // LayerCtrlListener
 public:
-    virtual void rebuildLayerMenu();
-    virtual void layerVisibilityChanged();
+    void rebuildLayerMenu() override;
+    void layerVisibilityChanged() override;
 
     FloatingToolbox* floatingToolbox;
-
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
     void setRecentMenu(GtkWidget* submenu);
     void toolbarSelected(ToolbarData* d);
-    ToolbarData* getSelectedToolbar();
+    ToolbarData* getSelectedToolbar() const;
     [[maybe_unused]] void reloadToolbars();
 
     /**
@@ -60,28 +69,30 @@ public:
     void updatePageNumbers(size_t page, size_t pagecount, size_t pdfpage);
 
     void setFontButtonFont(XojFont& font);
-    XojFont getFontButtonFont();
+    XojFont getFontButtonFont() const;
 
     void saveSidebarSize();
 
     void setMaximized(bool maximized);
     bool isMaximized() const;
 
-    XournalView* getXournal();
+    XournalView* getXournal() const;
 
     void setSidebarVisible(bool visible);
     void setToolbarVisible(bool visible);
 
-    Control* getControl();
+    Control* getControl() const;
+
+    PdfFloatingToolbox* getPdfToolbox() const;
 
     void updateScrollbarSidebarPosition();
 
     void setUndoDescription(const std::string& description);
     void setRedoDescription(const std::string& description);
 
-    SpinPageAdapter* getSpinPageNo();
-    ToolbarModel* getToolbarModel();
-    ToolMenuHandler* getToolMenuHandler();
+    SpinPageAdapter* getSpinPageNo() const;
+    ToolbarModel* getToolbarModel() const;
+    ToolMenuHandler* getToolMenuHandler() const;
 
     void disableAudioPlaybackButtons();
     void enableAudioPlaybackButtons();
@@ -92,12 +103,12 @@ public:
     void updateToolbarMenu();
     void updateColorscheme();
 
-    GtkWidget** getToolbarWidgets(int& length);
-    const char* getToolbarName(GtkToolbar* toolbar);
+    GtkWidget** getToolbarWidgets(int& length) const;
+    const char* getToolbarName(GtkToolbar* toolbar) const;
 
-    Layout* getLayout();
+    Layout* getLayout() const;
 
-    bool isGestureActive();
+    bool isGestureActive() const;
 
 
     /**
@@ -171,8 +182,10 @@ private:
 
     std::atomic_bool gtkTouchscreenScrollingEnabled{true};
 
+    std::unique_ptr<PdfFloatingToolbox> pdfFloatingToolBox;
+
     // Toolbars
-    ToolMenuHandler* toolbar;
+    std::unique_ptr<ToolMenuHandler> toolbar;
     ToolbarData* selectedToolbar = nullptr;
     bool toolbarIntialized = false;
 
@@ -185,8 +198,8 @@ private:
 
     bool sidebarVisible = true;
 
-    GtkWidget* boxContainerWidget;
-    GtkWidget* panedContainerWidget;
-    GtkWidget* mainContentWidget;
-    GtkWidget* sidebarWidget;
+    xoj::util::WidgetSPtr boxContainerWidget;
+    xoj::util::WidgetSPtr panedContainerWidget;
+    xoj::util::WidgetSPtr mainContentWidget;
+    xoj::util::WidgetSPtr sidebarWidget;
 };

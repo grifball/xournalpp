@@ -11,8 +11,7 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
 
 enum ToolSize {
@@ -42,6 +41,7 @@ enum DrawingType {
     DRAWING_TYPE_RECTANGLE,
     DRAWING_TYPE_ELLIPSE,
     DRAWING_TYPE_ARROW,
+    DRAWING_TYPE_DOUBLE_ARROW,
     DRAWING_TYPE_COORDINATE_SYSTEM,
     DRAWING_TYPE_STROKE_RECOGNIZER,
     DRAWING_TYPE_SPLINE
@@ -69,12 +69,16 @@ enum ToolType {
     TOOL_DRAW_RECT = 12,
     TOOL_DRAW_ELLIPSE = 13,
     TOOL_DRAW_ARROW = 14,
-    TOOL_DRAW_COORDINATE_SYSTEM = 15,
-    TOOL_FLOATING_TOOLBOX = 16,
-    TOOL_DRAW_SPLINE = 17,
+    TOOL_DRAW_DOUBLE_ARROW = 15,
+    TOOL_DRAW_COORDINATE_SYSTEM = 16,
+    TOOL_FLOATING_TOOLBOX = 17,
+    TOOL_DRAW_SPLINE = 18,
+    TOOL_SELECT_PDF_TEXT_LINEAR = 19,
+    TOOL_SELECT_PDF_TEXT_RECT = 20,
 
     TOOL_END_ENTRY
 };
+auto isSelectToolType(ToolType type) -> bool;
 
 // The count of tools
 #define TOOL_COUNT (TOOL_END_ENTRY - 1)
@@ -96,9 +100,11 @@ enum ToolCapabilities : unsigned int {
     TOOL_CAP_RECTANGLE = 1 << 3,
     TOOL_CAP_ELLIPSE = 1 << 4,
     TOOL_CAP_ARROW = 1 << 5,
-    TOOL_CAP_RECOGNIZER = 1 << 6,
-    TOOL_CAP_FILL = 1 << 7,
-    TOOL_CAP_COORDINATE_SYSTEM = 1 << 8,
-    TOOL_CAP_DASH_LINE = 1 << 9,
-    TOOL_CAP_SPLINE = 1 << 10,
+    TOOL_CAP_DOUBLE_ARROW = 1 << 6,
+    TOOL_CAP_RECOGNIZER = 1 << 7,
+    TOOL_CAP_FILL = 1 << 8,
+    TOOL_CAP_COORDINATE_SYSTEM = 1 << 9,
+    TOOL_CAP_DASH_LINE = 1 << 10,
+    TOOL_CAP_SPLINE = 1 << 11,
+    TOOL_CAP_LINE_STYLE = 1 << 12
 };

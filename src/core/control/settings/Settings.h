@@ -11,21 +11,27 @@
 
 #pragma once
 
-#include <map>
-#include <memory>
+#include <cstddef>  // for size_t
+#include <map>      // for map
+#include <memory>   // for make_shared, shared_ptr
+#include <string>   // for string, basic_string
+#include <utility>  // for pair
+#include <vector>   // for vector
 
-#include <config-dev.h>
-#include <libxml/xmlreader.h>
-#include <portaudio.h>
+#include <gdk/gdk.h>                      // for GdkInputSource, GdkD...
+#include <glib.h>                         // for gchar, gboolean, gint
+#include <libxml/tree.h>                  // for xmlNodePtr, xmlDocPtr
+#include <portaudiocpp/PortAudioCpp.hxx>  // for PaDeviceIndex
 
-#include "control/Tool.h"
-#include "control/tools/StrokeStabilizerEnum.h"
-#include "gui/toolbarMenubar/model/ColorPalette.h"
-#include "model/Font.h"
+#include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
+#include "model/Font.h"                          // for XojFont
+#include "util/Color.h"                          // for Color
 
-#include "LatexSettings.h"
-#include "SettingsEnums.h"
-#include "filesystem.h"
+#include "LatexSettings.h"  // for LatexSettings
+#include "SettingsEnums.h"  // for InputDeviceTypeOption
+#include "filesystem.h"     // for path
+
+struct Palette;
 
 constexpr auto DEFAULT_GRID_SIZE = 14.17;
 
@@ -215,6 +221,9 @@ public:
     bool isMenubarVisible() const;
     void setMenubarVisible(bool visible);
 
+    const bool isFilepathInTitlebarShown() const;
+    void setFilepathInTitlebarShown(const bool shown);
+
     void setShowPairedPages(bool showPairedPages);
     bool isShowPairedPages() const;
 
@@ -289,8 +298,14 @@ public:
     double getSnapGridSize() const;
     void setSnapGridSize(double gridSize);
 
+    double getStrokeRecognizerMinSize() const;
+    void setStrokeRecognizerMinSize(double value);
+
     StylusCursorType getStylusCursorType() const;
     void setStylusCursorType(StylusCursorType stylusCursorType);
+
+    IconTheme getIconTheme() const;
+    void setIconTheme(IconTheme iconTheme);
 
     bool isHighlightPosition() const;
     void setHighlightPosition(bool highlight);
@@ -355,8 +370,8 @@ public:
     std::string const& getPageTemplate() const;
     void setPageTemplate(const std::string& pageTemplate);
 
-    std::string const& getAudioFolder() const;
-    void setAudioFolder(const std::string& audioFolder);
+    fs::path const& getAudioFolder() const;
+    void setAudioFolder(fs::path audioFolder);
 
     PaDeviceIndex getAudioInputDevice() const;
     void setAudioInputDevice(PaDeviceIndex deviceIndex);
@@ -594,6 +609,11 @@ private:
     StylusCursorType stylusCursorType;
 
     /**
+     * Icon Theme
+     */
+    IconTheme iconTheme;
+
+    /**
      * Show a colored circle around the cursor
      */
     bool highlightPosition{};
@@ -634,6 +654,11 @@ private:
      * If the menu bar is visible on startup
      */
     bool menubarVisible{};
+
+    /**
+     * If the filepath is shown in titlebar
+     */
+    bool filepathShownInTitlebar{};
 
     /**
      *  Hide the scrollbar
@@ -886,7 +911,7 @@ private:
     /**
      * Audio folder for audio recording
      */
-    std::string audioFolder;
+    fs::path audioFolder;
 
     /**
      * Snap tolerance for the graph/dotted grid
@@ -900,6 +925,11 @@ private:
 
     /// Grid size for Snapping
     double snapGridSize{};
+
+    /**
+     * Minimum size of stroke to detect shape
+     */
+    double strokeRecognizerMinSize{};
 
     /// Touchscreens act like multi-touch-aware pens.
     bool touchDrawing{};

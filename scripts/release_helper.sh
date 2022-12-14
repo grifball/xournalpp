@@ -1,49 +1,52 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# shellcheck disable=SC2155
+
+set -o pipefail
 
 # Get the path of the script
 SCRIPT_PATH=$(dirname "$(realpath -s "$0")")
 
 # Parse current version string
 function current_major_version() {
-    sed -n 's/^set (CPACK_PACKAGE_VERSION_MAJOR "\([0-9]\+\)")/\1/p' "${SCRIPT_PATH}/../CMakeLists.txt"
+    sed -n 's/^        VERSION \([0-9]\+\).\([0-9]\+\).\([0-9]\+\)$/\1/p' "${SCRIPT_PATH}/../CMakeLists.txt"
 }
 
 function current_minor_version() {
-    sed -n 's/^set (CPACK_PACKAGE_VERSION_MINOR "\([0-9]\+\)")/\1/p' "${SCRIPT_PATH}/../CMakeLists.txt"
+    sed -n 's/^        VERSION \([0-9]\+\).\([0-9]\+\).\([0-9]\+\)$/\2/p' "${SCRIPT_PATH}/../CMakeLists.txt"
 }
 
 function current_patch_version() {
-    sed -n 's/^set (CPACK_PACKAGE_VERSION_PATCH "\([0-9]\+\)")/\1/p' "${SCRIPT_PATH}/../CMakeLists.txt"
+    sed -n 's/^        VERSION \([0-9]\+\).\([0-9]\+\).\([0-9]\+\)$/\3/p' "${SCRIPT_PATH}/../CMakeLists.txt"
 }
 
 function current_suffix_version() {
-    sed -n 's/^set (VERSION_SUFFIX "\([+~][^\"]*\)")/\1/p' "${SCRIPT_PATH}/../CMakeLists.txt"
+    sed -n 's/^set\s*(VERSION_SUFFIX "\([+~][^\"]*\)")/\1/p' "${SCRIPT_PATH}/../CMakeLists.txt"
 }
 
 function current_version() {
-    echo $(current_major_version).$(current_minor_version).$(current_patch_version)$(current_suffix_version)
+    echo "$(current_major_version).$(current_minor_version).$(current_patch_version)$(current_suffix_version)"
 }
 
 function parse_major_version() {
-    echo $1 | sed -n 's/^\([0-9]\+\)\..*$/\1/p'
+    echo "$1" | sed -n 's/^\([0-9]\+\)\..*$/\1/p'
 }
 
 function parse_minor_version() {
-    echo $1 | sed -n 's/^[0-9]\+\.\([0-9]\+\)\..*$/\1/p'
+    echo "$1" | sed -n 's/^[0-9]\+\.\([0-9]\+\)\..*$/\1/p'
 }
 
 function parse_patch_version() {
-    echo $1 | sed -n 's/^[0-9]\+\.[0-9]\+\.\([0-9]\+\).*$/\1/p'
+    echo "$1" | sed -n 's/^[0-9]\+\.[0-9]\+\.\([0-9]\+\).*$/\1/p'
 }
 
 function parse_suffix_version() {
-    echo $1 | sed -n 's/^[0-9]\+\.[0-9]\+\.[0-9]\+\([+~].*\)$/\1/p'
+    echo "$1" | sed -n 's/^[0-9]\+\.[0-9]\+\.[0-9]\+\([+~].*\)$/\1/p'
 }
 
 # Compares two versions $1 and $2
 # If $2 is greater it returns 0
 function compare_versions() {
-    if [[ $1 == $2 ]]; then
+    if [[ $1 == "$2" ]]; then
         return 1
     fi
     if printf "%s\n%s" "$1" "$2" | LC_ALL=C sort -CVu; then
@@ -56,6 +59,10 @@ function compare_versions() {
 # $1 the version as a string
 # Returns 1 if the version is valid
 function validate_version() {
+    if [ -z "$1" ]; then
+        return 0
+    fi
+
     if ! [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+([+~][A-Za-z0-9+~\.-]*)*?$ ]]; then
         return 1
     else
@@ -78,14 +85,14 @@ function print_version_help() {
 # $2 The message to print before abort
 function abort() {
     echo "ABORT: $2"
-    exit $1
+    exit "$1"
 }
 
 # Check if branch already exists
 # $1 The name of the branch
 # If it exists returns 0
 function branch_exists() {
-    if git rev-parse --quiet --verify $1 > /dev/null; then
+    if git rev-parse --quiet --verify "$1" > /dev/null; then
         return 0
     fi
     return 1
@@ -125,15 +132,13 @@ function bump_version() {
     fi
 
     # Update version in the CMakeLists.txt
-    sed -i "s/set (CPACK_PACKAGE_VERSION_MAJOR \"[0-9]\+\")/set (CPACK_PACKAGE_VERSION_MAJOR \"$(parse_major_version $1)\")/g" "${SCRIPT_PATH}/../CMakeLists.txt"
-    sed -i "s/set (CPACK_PACKAGE_VERSION_MINOR \"[0-9]\+\")/set (CPACK_PACKAGE_VERSION_MINOR \"$(parse_minor_version $1)\")/g" "${SCRIPT_PATH}/../CMakeLists.txt"
-    sed -i "s/set (CPACK_PACKAGE_VERSION_PATCH \"[0-9]\+\")/set (CPACK_PACKAGE_VERSION_PATCH \"$(parse_patch_version $1)\")/g" "${SCRIPT_PATH}/../CMakeLists.txt"
-    sed -i "s/set (VERSION_SUFFIX \"[^\"]*\")/set (VERSION_SUFFIX \"$(parse_suffix_version $1)\")/g" "${SCRIPT_PATH}/../CMakeLists.txt"
+    sed -i "s/^        VERSION $(current_major_version).$(current_minor_version).$(current_patch_version)/        VERSION $(parse_major_version "$1").$(parse_minor_version "$1").$(parse_patch_version "$1")/" "${SCRIPT_PATH}"/../CMakeLists.txt
+    sed -i "s/set\s*(VERSION_SUFFIX \"[^\"]*\")/set(VERSION_SUFFIX \"$(parse_suffix_version "$1")\")/g" "${SCRIPT_PATH}/../CMakeLists.txt"
 
     # From now on current_*_version functions return the new version
 
     # Update Changelog
-    if [ $replace -eq 0 ]; then
+    if [ "$replace" -eq 0 ]; then
         sed -i "N;N;s/# Changelog\n\n/# Changelog\n\n## $(current_version) (Unreleased)\n\n/g" "${SCRIPT_PATH}/../CHANGELOG.md"
     else
         if [ $publish -eq 0 ]; then
@@ -144,17 +149,19 @@ function bump_version() {
     fi
 
     # Update Debian Changelog
-    local git_user=$(git config --get user.name)
-    if [ $? -ne 0 ]; then
+    local git_user=
+    if ! git_user=$(git config --get user.name); then
         abort 2 "Could not read current git user - Please set with 'git config --set user.name <name>'"
     fi
-    local git_mail=$(git config --get user.email)
-    if [ $? -ne 0 ]; then
+
+    local git_mail=
+    if ! git_mail=$(git config --get user.email); then
         abort 2 "Could not read current git user email - Please set with 'git config --set user.email <email>'"
     fi
+
     local date=$(date --rfc-2822)
 
-    if [ $replace -eq 0 ]; then
+    if [ "$replace" -eq 0 ]; then
         sed -i "1i xournalpp ($(current_version)-1) UNRELEASED; urgency=medium\n\n  * \n\n -- ${git_user} <${git_mail}>  ${date}\n" "${SCRIPT_PATH}/../debian/changelog"
     else
         if [ $publish -eq 0 ]; then
@@ -169,13 +176,20 @@ function bump_version() {
     # Update Appdata
     local date=$(date +%Y-%m-%d)
 
-    if [ $replace -eq 0 ]; then
+    if [ "$replace" -eq 0 ]; then
         sed -i "1,/^    <release .*$/ {/^    <release .*$/i\
         \ \ \ \ <release date=\"$date\" version=\"$(current_version)\" />
         }" "${SCRIPT_PATH}/../desktop/com.github.xournalpp.xournalpp.appdata.xml"
     else
         sed -i "s/\ \ \ \ <release date=\".*\" version=\"${prior_version}\" \/>/\ \ \ \ <release date=\"$date\" version=\"$(current_version)\" \/>/g" "${SCRIPT_PATH}/../desktop/com.github.xournalpp.xournalpp.appdata.xml"
     fi
+
+    # Update MacOS Info.plist
+    sed -i "s/<string>${prior_version}<\/string>/<string>$(current_version)<\/string>/g" "${SCRIPT_PATH}/../mac-setup/Info.plist"
+    sed -i "s/<string>${prior_version}.0<\/string>/<string>$(current_version).0<\/string>/g" "${SCRIPT_PATH}/../mac-setup/Info.plist"
+
+    # Update Fedora xournalpp.spec
+    sed -i "s/%global	version_string ${prior_version}/%global	version_string $(current_version)/g" "${SCRIPT_PATH}/../rpm/fedora/xournalpp.spec"
 }
 
 # Prepares a new version
@@ -183,7 +197,7 @@ function bump_version() {
 # Assumes it is on the main development branch
 # $1 The version string for the new version
 function prepare_new_version() {
-    if [[ $(parse_patch_version $1) -ne 0 ]]; then
+    if [[ $(parse_patch_version "$1") -ne 0 ]]; then
         abort 6 "The patch level must be '0'."
     fi
 
@@ -194,24 +208,22 @@ function prepare_new_version() {
     fi
 
     # Create release branch
-    local branch_name="release-$(parse_major_version $1).$(parse_minor_version $1)"
+    local branch_name="release-$(parse_major_version "$1").$(parse_minor_version "$1")"
 
     # Checkout release branch
-    git checkout --quiet -b $branch_name
-    if [ $? -ne 0 ]; then
+    if ! git checkout --quiet -b "$branch_name"; then
         abort 11 "Could not check out new release branch"
     fi
 
     # Bump version of release branch
-    local new_version="$(echo $1|sed 's/+dev$//g')~dev"
-    bump_version $new_version 1
-    if [ $? -ne 0 ]; then
+    local new_version="$(echo "$1" | sed 's/+dev$//g')~dev"
+    
+    if ! bump_version "$new_version" 1; then
         abort 9 "Could not bump version of release branch"
     fi
 
     # Commit version bump
-    git commit --quiet -a -m "Automated version bump to $new_version"
-    if [ $? -ne 0 ]; then
+    if ! git commit --quiet -a -m "Automated version bump to $new_version"; then
         abort 10 "Could not commit version bump on release branch"
     fi
 
@@ -232,17 +244,17 @@ function prepare_new_version() {
 # $1 The version string for the hotfix
 function prepare_hotfix() {
     # Check for a valid modification of the version strings
-    if [[ $(parse_major_version $1) -ne $(current_major_version) ]]; then
+    if [[ $(parse_major_version "$1") -ne $(current_major_version) ]]; then
         abort 6 "The major version may not differ from the base release for a hotfix."
     fi
-    if [[ $(parse_minor_version $1) -ne $(current_minor_version) ]]; then
+    if [[ $(parse_minor_version "$1") -ne $(current_minor_version) ]]; then
         abort 6 "The minor version may not differ from the base release for a hotfix."
     fi
-    if [[ $(parse_patch_version $1) -ne $(current_patch_version) ]]; then
+    if [[ $(parse_patch_version "$1") -ne $(current_patch_version) ]]; then
         abort 6 "The patch version may not differ from the base release for a hotfix."
     fi
 
-    if ! compare_versions $(current_version) $1; then
+    if ! compare_versions "$(current_version)" "$1"; then
         abort 7 "The provided version is not higher than the release it is based on."
         print_version_help
     fi
@@ -250,30 +262,27 @@ function prepare_hotfix() {
     local branch_name="hotfix-$1"
 
     # Check if branch already exists
-    if branch_exists $branch_name; then
+    if branch_exists "$branch_name"; then
         abort 8 "The branch for this release already exists. Use this branch directly instead."
     fi
 
     # Check if hotfix was already released
-    if release_exists $1; then
+    if release_exists "$1"; then
         abort 8 "The release already exists."
     fi
 
     # Check out new release-branch
-    git checkout --quiet -b $branch_name
-    if [ $? -ne 0 ]; then
+    if ! git checkout --quiet -b "$branch_name"; then
         abort 9 "Could not check out new release branch"
     fi
 
     # Bump version
-    bump_version "$1~dev" 0
-    if [ $? -ne 0 ]; then
+    if ! bump_version "$1~dev" 0; then
         abort 10 "Could not set version of release"
     fi
 
     # Commit version bump
-    git commit --quiet -a -m "Automated version bump to $1"
-    if [ $? -ne 0 ]; then
+    if ! git commit --quiet -a -m "Automated version bump to $1"; then
         abort 10 "Could not commit version bump on new release branch"
     fi
 
@@ -287,8 +296,8 @@ function prepare_hotfix() {
 
 function publish_release() {
     # Determine on which branch we are
-    local branch=$(git branch --show-current)
-    if [ $? -ne 0 ]; then
+    local branch=
+    if ! branch=$(git branch --show-current); then
         abort 2 "Could not determine the current branch"
     fi
 
@@ -296,16 +305,16 @@ function publish_release() {
         abort 4 "You are not on a release or hotfix branch. Are you on the right branch?"
     fi
 
-    if ! [[ $(read -e -p "Are you sure you want to publish release $(current_version|sed 's/~dev$//g')? [y/N] "; echo $REPLY) =~ ^[Yy]+$ ]]; then
+    read -re -p "Are you sure you want to publish release $(current_version|sed 's/~dev$//g')? [y/N] "
+    if ! [[ $REPLY =~ ^[Yy]+$ ]]; then
         exit 0
     fi
 
     #Strip ~dev from the version
-    bump_version $(echo $(current_version)|sed 's/~dev$//g') 1
+    bump_version "$(echo "$(current_version)" | sed 's/~dev$//g')" 1
 
     # Commit version bump
-    git commit -a -m "Release $(current_version)"
-    if [ $? -ne 0 ]; then
+    if ! git commit -a -m "Release $(current_version)"; then
         abort 5 "Could not commit version bump for release"
     fi
 
@@ -317,8 +326,7 @@ function publish_release() {
 
     # Tag the release
     echo "Tagging the release"
-    git tag -a "v$(current_version)" -m "Release $(current_version)"
-    if [ $? -ne 0 ]; then
+    if ! git tag -a "v$(current_version)" -m "Release $(current_version)"; then
         abort 6 "Could not tag release"
     fi
 
@@ -327,8 +335,7 @@ function publish_release() {
         bump_version "$(current_major_version).$(current_minor_version).$(($(current_patch_version)+1))$(current_suffix_version)~dev" 0
 
         # Commit version bump
-        git commit -a -m "Automated version bump to $(current_version)"
-        if [ $? -ne 0 ]; then
+        if ! git commit -a -m "Automated version bump to $(current_version)"; then
             abort 7 "Could not commit version bump after release"
         fi
     fi
@@ -339,11 +346,11 @@ function publish_release() {
     echo "    git push --follow-tags origin ${branch}"
     echo ""
 
-    if ! [[ $(read -e -p 'Do you want to merge the release back to the main development branch now? [Y/n] '; echo $REPLY) =~ ^[Nn]+$ ]]; then
+    read -re -p 'Do you want to merge the release back to the main development branch now? [Y/n] '
+    if ! [[ $REPLY =~ ^[Nn]+$ ]]; then
 
         # Switch to main development branch
-        git checkout --quiet master
-        if [ $? -ne 0 ]; then
+        if ! git checkout --quiet master; then
             abort 7 "Could not checkout main development branch"
         fi
 
@@ -355,7 +362,7 @@ function publish_release() {
         fi
 
         # If the current version of master is lower than the one we merge in, we must bump the version
-        if compare_versions $old_version $release_version; then
+        if compare_versions "$old_version" "$release_version"; then
             # Release version is higher
             echo ""
             echo "Be careful while patching! Read these instructions carefully before starting the merge:"
@@ -363,9 +370,9 @@ function publish_release() {
             echo "- There should not exist a development version anymore!"
             echo "  A new development version will be created automatically!"
 
-            if ! [[ $(read -e -p "Start the merging process? [y/N] "; echo $REPLY) =~ ^[Yy]+$ ]]; then
-                git checkout --quiet $branch
-                if [ $? -ne 0 ]; then
+            read -re -p "Start the merging process? [y/N] "
+            if ! [[ $REPLY =~ ^[Yy]+$ ]]; then
+                if ! git checkout --quiet "$branch"; then
                     abort 7 "Could not checkout release branch. BEWARE you are on 'master' now!"
                 fi
                 exit 0
@@ -376,7 +383,7 @@ function publish_release() {
             # These git hooks will be called before the merge commit is created. They will take care of bumping the version to the correct value.
             # Create the commit-msg hook
             cat << EOF > "${SCRIPT_PATH}/../.git/hooks/commit-msg"
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Acquire helper methods
 SOURCE_ONLY=1
@@ -411,7 +418,7 @@ fi
 bump_version "${release_version}+dev" 0
 
 # Amend the previous commit to include the version change
-git add CMakeLists.txt CHANGELOG.md debian/changelog desktop/com.github.xournalpp.xournalpp.appdata.xml
+git add CMakeLists.txt CHANGELOG.md debian/changelog desktop/com.github.xournalpp.xournalpp.appdata.xml rpm/fedora/xournalpp.spec mac-setup/Info.plist
 
 # Wait for merge to finish and then amend the commit (This hack is needed since git does not allow amendments in hooks)
 bash -c "git merge HEAD &> /dev/null; while [ $? -ne 0 ]; do sleep 1; git merge HEAD &> /dev/null; done; git commit --amend -C HEAD --no-verify" &
@@ -427,7 +434,7 @@ EOF
             chmod +x "${SCRIPT_PATH}/../.git/hooks/commit-msg"
 
             # Start merge
-            git merge --no-ff -m "Merge back Release ${release_version}" $sha
+            git merge --no-ff -m "Merge back Release ${release_version}" "$sha"
 
         else
             # Release version is lower
@@ -437,9 +444,9 @@ EOF
             echo "- The versions in the changelog should be ordered in a descending order (highest first)"
             echo "- There should not exist any development version lower than your published release"
 
-            if ! [[ $(read -e -p "Start the merging process? [y/N] "; echo $REPLY) =~ ^[Yy]+$ ]]; then
-                git checkout --quiet $branch
-                if [ $? -ne 0 ]; then
+            read -re -p "Start the merging process? [y/N] "
+            if ! [[ $REPLY =~ ^[Yy]+$ ]]; then
+                if ! git checkout --quiet "$branch"; then
                     abort 7 "Could not checkout release branch. BEWARE you are on 'master' now!"
                 fi
                 exit 0
@@ -452,7 +459,7 @@ EOF
             mv "${SCRIPT_PATH}/../.git/hooks/pre-merge-commit.sample" "${SCRIPT_PATH}/../.git/hooks/pre-merge-commit"
             # Create the pre-commit hook
             cat << EOF > "${SCRIPT_PATH}/../.git/hooks/pre-commit"
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Acquire helper methods
 SOURCE_ONLY=1
@@ -495,7 +502,7 @@ EOF
             chmod +x "${SCRIPT_PATH}/../.git/hooks/pre-commit"
 
             # Start merge
-            git merge --no-ff -m "Merge back Release ${release_version}" $sha
+            git merge --no-ff -m "Merge back Release ${release_version}" "$sha"
 
         fi
     fi
@@ -523,7 +530,7 @@ if [ -z ${SOURCE_ONLY+x} ]; then
         echo "Usage: $0 <command> <arguments>"
         echo ""
         echo "Commands:"
-        echo "  prepare <version>  Prepares a release in the form of a new branch with correct version strings."
+        echo "    prepare <version>  Prepares a release in the form of a new branch with correct version strings."
         echo "                     This command may only be run on a clean HEAD from:"
         echo "                       - The main development branch (master)"
         echo "                           The supplied version must differ from the current version in the major"
@@ -546,8 +553,7 @@ if [ -z ${SOURCE_ONLY+x} ]; then
     fi
 
     # Check on which branch we are
-    branch=$(git branch --show-current)
-    if [ $? -ne 0 ]; then
+    if ! branch=$(git branch --show-current); then
         abort 2 "Could not determine the current branch"
     fi
 
@@ -562,7 +568,7 @@ if [ -z ${SOURCE_ONLY+x} ]; then
     if [[ $command == "prepare" ]]; then
         version=$2
 
-        if validate_version $1; then
+        if validate_version "$version"; then
             print_version_help
             abort 4 "No valid version string provided"
         fi
@@ -576,9 +582,9 @@ if [ -z ${SOURCE_ONLY+x} ]; then
             if is_detached; then
                 abort 6 "You can not prepare a release in detached HEAD mode"
             fi
-            prepare_new_version $version
+            prepare_new_version "$version"
         elif [[ $(git tag --contains | grep -Exc '^v[0-9]+.[0-9]+.[0-9]+([+~][0-9A-Za-z+~.-]*)*$') -ne 0 ]]; then
-            prepare_hotfix $version
+            prepare_hotfix "$version"
         else
             abort 4 "You may only call this script from the main development branch, an existing release branch or a tagged release."
         fi

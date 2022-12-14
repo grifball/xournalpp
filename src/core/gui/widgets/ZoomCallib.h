@@ -8,12 +8,14 @@
  *
  * @license GPL
  */
+#pragma once
 
-#ifndef __ZOOMCALLIB_H__
-#define __ZOOMCALLIB_H__
+#include <glib-object.h>  // for G_TYPE_CHECK_INSTANCE_TYPE, G_TYPE_CHECK_IN...
+#include <glib.h>         // for gint, G_BEGIN_DECLS, G_END_DECLS
+#include <gtk/gtk.h>      // for GtkWidget, GtkWidgetClass
 
-#include <cairo.h>
-#include <gtk/gtk.h>
+struct _ZoomCallib;
+struct _ZoomCallibClass;
 
 G_BEGIN_DECLS
 
@@ -39,6 +41,3 @@ void zoomcallib_set_val(ZoomCallib* callib, gint val);
 GtkWidget* zoomcallib_new();
 
 G_END_DECLS
-
-
-#endif /* __ZOOMCALLIB_H__ */

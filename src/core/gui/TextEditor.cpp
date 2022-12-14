@@ -1,64 +1,87 @@
 #include "TextEditor.h"
 
-#include <memory>
+#include <cassert>
+#include <cmath>
+#include <cstring>  // for strcmp, size_t
+#include <memory>   // for allocator, make_unique, __shared_p...
+#include <utility>  // for move
 
-#include <gtk/gtkimmulticontext.h>
+#include <gdk/gdkkeysyms.h>  // for GDK_KEY_B, GDK_KEY_ISO_Enter, GDK_...
+#include <glib-object.h>     // for g_object_get, g_object_unref, G_CA...
 
-#include "control/Control.h"
-#include "undo/ColorUndoAction.h"
-#include "view/DocumentView.h"
-#include "view/TextView.h"
+#include "control/Control.h"       // for Control
+#include "model/Font.h"            // for XojFont
+#include "model/PageRef.h"         // for PageRef
+#include "model/Text.h"            // for Text
+#include "model/XojPage.h"         // for XojPage
+#include "undo/ColorUndoAction.h"  // for ColorUndoAction
+#include "undo/TextUndoAction.h"   // for TextUndoAction
+#include "undo/UndoRedoHandler.h"  // for UndoRedoHandler
+#include "util/Rectangle.h"        // for Rectangle
+#include "util/raii/CStringWrapper.h"
+#include "view/TextView.h"  // for TextView
 
-#include "PageView.h"
-#include "TextEditorWidget.h"
-#include "XournalView.h"
-#include "XournalppCursor.h"
+#include "PageView.h"          // for XojPageView
+#include "TextEditorWidget.h"  // for gtk_xoj_int_txt_new
+#include "XournalView.h"       // for XournalView
+#include "XournalppCursor.h"   // for XournalppCursor
 
-using std::string;
+class UndoAction;
 
 TextEditor::TextEditor(XojPageView* gui, GtkWidget* widget, Text* text, bool ownText):
-        gui(gui), widget(widget), text(text), ownText(ownText) {
+        gui(gui),
+        xournalWidget(widget),
+        text(text),
+        lastText(text->getText()),
+        textWidget(gtk_xoj_int_txt_new(this), xoj::util::adopt),
+        imContext(gtk_im_multicontext_new(), xoj::util::adopt),
+        buffer(gtk_text_buffer_new(nullptr), xoj::util::adopt),
+        ownText(ownText) {
     this->text->setInEditing(true);
-    this->textWidget = gtk_xoj_int_txt_new(this);
-    this->lastText = text->getText();
 
-    this->buffer = gtk_text_buffer_new(nullptr);
-    string txt = this->text->getText();
-    gtk_text_buffer_set_text(this->buffer, txt.c_str(), -1);
+    this->previousBoundingBox = text->boundingRect();
 
-    g_signal_connect(this->buffer, "paste-done", G_CALLBACK(bufferPasteDoneCallback), this);
+    this->setText(this->lastText);
 
-    GtkTextIter first = {nullptr};
-    gtk_text_buffer_get_iter_at_offset(this->buffer, &first, 0);
-    gtk_text_buffer_place_cursor(this->buffer, &first);
+    g_signal_connect(this->buffer.get(), "paste-done", G_CALLBACK(bufferPasteDoneCallback), this);
 
-    GtkSettings* settings = gtk_widget_get_settings(this->widget);
-    g_object_get(settings, "gtk-cursor-blink", &this->cursorBlink, nullptr);
-    g_object_get(settings, "gtk-cursor-blink-time", &this->cursorBlinkTime, nullptr);
-    g_object_get(settings, "gtk-cursor-blink-timeout", &this->cursorBlinkTimeout, nullptr);
+    {  // Get cursor blinking settings
+        GtkSettings* settings = gtk_widget_get_settings(this->xournalWidget);
+        g_object_get(settings, "gtk-cursor-blink", &this->cursorBlink, nullptr);
+        if (this->cursorBlink) {
+            int tmp = 0;
+            g_object_get(settings, "gtk-cursor-blink-time", &tmp, nullptr);
+            assert(tmp >= 0);
+            auto cursorBlinkingPeriod = static_cast<unsigned int>(tmp);
+            this->cursorBlinkingTimeOn = cursorBlinkingPeriod * CURSOR_ON_MULTIPLIER / CURSOR_DIVIDER;
+            this->cursorBlinkingTimeOff = cursorBlinkingPeriod - this->cursorBlinkingTimeOn;
+        }
+    }
 
-    this->imContext = gtk_im_multicontext_new();
-    gtk_im_context_set_client_window(this->imContext, gtk_widget_get_parent_window(this->widget));
-    gtk_im_context_focus_in(this->imContext);
+    gtk_im_context_set_client_window(this->imContext.get(), gtk_widget_get_parent_window(this->xournalWidget));
+    gtk_im_context_focus_in(this->imContext.get());
 
-    g_signal_connect(this->imContext, "commit", G_CALLBACK(iMCommitCallback), this);
-    g_signal_connect(this->imContext, "preedit-changed", G_CALLBACK(iMPreeditChangedCallback), this);
-    g_signal_connect(this->imContext, "retrieve-surrounding", G_CALLBACK(iMRetrieveSurroundingCallback), this);
-    g_signal_connect(this->imContext, "delete-surrounding", G_CALLBACK(imDeleteSurroundingCallback), this);
+    g_signal_connect(this->imContext.get(), "commit", G_CALLBACK(iMCommitCallback), this);
+    g_signal_connect(this->imContext.get(), "preedit-changed", G_CALLBACK(iMPreeditChangedCallback), this);
+    g_signal_connect(this->imContext.get(), "retrieve-surrounding", G_CALLBACK(iMRetrieveSurroundingCallback), this);
+    g_signal_connect(this->imContext.get(), "delete-surrounding", G_CALLBACK(imDeleteSurroundingCallback), this);
+
 
     if (this->cursorBlink) {
-        blinkCallback(this);
+        BlinkTimer::callback(this);
     } else {
         this->cursorVisible = true;
     }
 }
 
 TextEditor::~TextEditor() {
+    gtk_im_context_focus_out(this->imContext.get());
+
     this->text->setInEditing(false);
-    this->widget = nullptr;
+    this->xournalWidget = nullptr;
 
     Control* control = gui->getXournal()->getControl();
-    control->setCopyPasteEnabled(false);
+    control->setCopyCutEnabled(false);
 
     this->contentsChanged(true);
 
@@ -72,47 +95,26 @@ TextEditor::~TextEditor() {
 
     if (this->ownText) {
         delete this->text;
-        this->text = nullptr;
     }
-
-    g_object_unref(this->buffer);
-    gtk_widget_destroy(this->textWidget);
-
-    if (this->blinkTimeout) {
-        g_source_remove(this->blinkTimeout);
-    }
-
-    g_object_unref(this->imContext);
-
     this->text = nullptr;
-
-    if (this->layout) {
-        g_object_unref(this->layout);
-        this->layout = nullptr;
-    }
-
-    if (this->preeditAttrList) {
-        pango_attr_list_unref(this->preeditAttrList);
-    }
 }
 
 auto TextEditor::getText() -> Text* {
     GtkTextIter start, end;
 
-    gtk_text_buffer_get_bounds(this->buffer, &start, &end);
-    char* text = gtk_text_iter_get_text(&start, &end);
-    this->text->setText(text);
-    g_free(text);
+    gtk_text_buffer_get_bounds(this->buffer.get(), &start, &end);
+    auto text = xoj::util::OwnedCString::assumeOwnership(gtk_text_iter_get_text(&start, &end));
+    this->text->setText(text.get());
 
     return this->text;
 }
 
-void TextEditor::setText(const string& text) {
-    gtk_text_buffer_set_text(this->buffer, text.c_str(), -1);
+void TextEditor::setText(const std::string& text) {
+    gtk_text_buffer_set_text(this->buffer.get(), text.c_str(), -1);
 
     GtkTextIter first = {nullptr};
-    gtk_text_buffer_get_iter_at_offset(this->buffer, &first, 0);
-    gtk_text_buffer_place_cursor(this->buffer, &first);
+    gtk_text_buffer_get_iter_at_offset(this->buffer.get(), &first, 0);
+    gtk_text_buffer_place_cursor(this->buffer.get(), &first);
 }
 
 auto TextEditor::setColor(Color color) -> UndoAction* {
@@ -134,21 +136,25 @@ auto TextEditor::setColor(Color color) -> UndoAction* {
 
 void TextEditor::setFont(XojFont font) {
     this->text->setFont(font);
-    TextView::updatePangoFont(this->layout, this->text);
+    afterFontChange();
+}
+
+void TextEditor::afterFontChange() {
+    xoj::view::TextView::updatePangoFont(this->layout.get(), this->text);
     this->repaintEditor();
 }
 
 void TextEditor::textCopyed() { this->ownText = false; }
 
 void TextEditor::iMCommitCallback(GtkIMContext* context, const gchar* str, TextEditor* te) {
-    gtk_text_buffer_begin_user_action(te->buffer);
-    gboolean had_selection = gtk_text_buffer_get_selection_bounds(te->buffer, nullptr, nullptr);
+    gtk_text_buffer_begin_user_action(te->buffer.get());
+    gboolean had_selection = gtk_text_buffer_get_selection_bounds(te->buffer.get(), nullptr, nullptr);
 
-    gtk_text_buffer_delete_selection(te->buffer, true, true);
+    gtk_text_buffer_delete_selection(te->buffer.get(), true, true);
 
     if (!strcmp(str, "\n")) {
-        if (!gtk_text_buffer_insert_interactive_at_cursor(te->buffer, "\n", 1, true)) {
-            gtk_widget_error_bell(te->widget);
+        if (!gtk_text_buffer_insert_interactive_at_cursor(te->buffer.get(), "\n", 1, true)) {
+            gtk_widget_error_bell(te->xournalWidget);
         } else {
             te->contentsChanged(true);
         }
@@ -156,81 +162,73 @@ void TextEditor::iMCommitCallback(GtkIMContext* context, const gchar* str, TextE
         if (!had_selection && te->cursorOverwrite) {
             GtkTextIter insert;
 
-            gtk_text_buffer_get_iter_at_mark(te->buffer, &insert, gtk_text_buffer_get_insert(te->buffer));
+            gtk_text_buffer_get_iter_at_mark(te->buffer.get(), &insert, gtk_text_buffer_get_insert(te->buffer.get()));
             if (!gtk_text_iter_ends_line(&insert)) {
                 te->deleteFromCursor(GTK_DELETE_CHARS, 1);
             }
         }
 
-        if (!gtk_text_buffer_insert_interactive_at_cursor(te->buffer, str, -1, true)) {
-            gtk_widget_error_bell(te->widget);
+        if (!gtk_text_buffer_insert_interactive_at_cursor(te->buffer.get(), str, -1, true)) {
+            gtk_widget_error_bell(te->xournalWidget);
         }
     }
 
-    gtk_text_buffer_end_user_action(te->buffer);
-    te->repaintEditor();
+    gtk_text_buffer_end_user_action(te->buffer.get());
     te->contentsChanged();
+    te->repaintEditor();
 }
 
 void TextEditor::iMPreeditChangedCallback(GtkIMContext* context, TextEditor* te) {
-    gchar* str = nullptr;
-    PangoAttrList* attrs = nullptr;
+    xoj::util::OwnedCString str;
     gint cursor_pos = 0;
     GtkTextIter iter;
 
-    gtk_text_buffer_get_iter_at_mark(te->buffer, &iter, gtk_text_buffer_get_insert(te->buffer));
+    gtk_text_buffer_get_iter_at_mark(te->buffer.get(), &iter, gtk_text_buffer_get_insert(te->buffer.get()));
+
+    {
+        PangoAttrList* attrs = nullptr;
+        gtk_im_context_get_preedit_string(context, str.contentReplacer(), &attrs, &cursor_pos);
+        if (attrs == nullptr) {
+            attrs = pango_attr_list_new();
+        }
+        te->preeditAttrList.reset(attrs, xoj::util::adopt);
+    }
 
     /* Keypress events are passed to input method even if cursor position is
      * not editable; so beep here if it's multi-key input sequence, input
      * method will be reset in key-press-event handler.
      */
-    gtk_im_context_get_preedit_string(context, &str, &attrs, &cursor_pos);
-
-    if (attrs == nullptr) {
-        attrs = pango_attr_list_new();
-    }
-    if (te->preeditAttrList) {
-        pango_attr_list_unref(te->preeditAttrList);
-    }
-    te->preeditAttrList = attrs;
-    attrs = nullptr;
-
     if (str && str[0] && !gtk_text_iter_can_insert(&iter, true)) {
-        gtk_widget_error_bell(te->widget);
-        goto out;
+        gtk_widget_error_bell(te->xournalWidget);
+        return;
     }
 
-    if (str != nullptr) {
-        te->preeditString = str;
+    if (str) {
+        te->preeditString = str.get();
     } else {
         te->preeditString = "";
     }
     te->preeditCursor = cursor_pos;
-    te->repaintEditor();
     te->contentsChanged();
-
-out:
-
-    g_free(str);
+    te->repaintEditor();
 }
 
 auto TextEditor::iMRetrieveSurroundingCallback(GtkIMContext* context, TextEditor* te) -> bool {
     GtkTextIter start;
     GtkTextIter end;
 
-    gtk_text_buffer_get_iter_at_mark(te->buffer, &start, gtk_text_buffer_get_insert(te->buffer));
+    gtk_text_buffer_get_iter_at_mark(te->buffer.get(), &start, gtk_text_buffer_get_insert(te->buffer.get()));
     end = start;
 
     gint pos = gtk_text_iter_get_line_index(&start);
     gtk_text_iter_set_line_offset(&start, 0);
     gtk_text_iter_forward_to_line_end(&end);
 
-    gchar* text = gtk_text_iter_get_slice(&start, &end);
-    gtk_im_context_set_surrounding(context, text, -1, pos);
-    g_free(text);
+    auto text = xoj::util::OwnedCString::assumeOwnership(gtk_text_iter_get_slice(&start, &end));
+    gtk_im_context_set_surrounding(context, text.get(), -1, pos);
 
-    te->repaintEditor();
     te->contentsChanged();
+    te->repaintEditor();
     return true;
 }
 
@@ -238,54 +236,51 @@ auto TextEditor::imDeleteSurroundingCallback(GtkIMContext* context, gint offset,
     GtkTextIter start;
     GtkTextIter end;
 
-    gtk_text_buffer_get_iter_at_mark(te->buffer, &start, gtk_text_buffer_get_insert(te->buffer));
+    gtk_text_buffer_get_iter_at_mark(te->buffer.get(), &start, gtk_text_buffer_get_insert(te->buffer.get()));
     end = start;
 
     gtk_text_iter_forward_chars(&start, offset);
     gtk_text_iter_forward_chars(&end, offset + n_chars);
 
-    gtk_text_buffer_delete_interactive(te->buffer, &start, &end, true);
+    gtk_text_buffer_delete_interactive(te->buffer.get(), &start, &end, true);
 
-    te->repaintEditor();
     te->contentsChanged();
+    te->repaintEditor();
 
     return true;
 }
 
 auto TextEditor::onKeyPressEvent(GdkEventKey* event) -> bool {
-    if (gtk_bindings_activate_event(G_OBJECT(this->textWidget), event)) {
-        return true;
-    }
-
     bool retval = false;
     bool obscure = false;
 
     GtkTextIter iter;
     GdkModifierType modifiers = gtk_accelerator_get_default_mod_mask();
-    GtkTextMark* insert = gtk_text_buffer_get_insert(this->buffer);
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &iter, insert);
+    GtkTextMark* insert = gtk_text_buffer_get_insert(this->buffer.get());
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &iter, insert);
     bool canInsert = gtk_text_iter_can_insert(&iter, true);
-    if (gtk_im_context_filter_keypress(this->imContext, event)) {
+
+    // IME needs to handle the input first so the candidate window works correctly
+    if (gtk_im_context_filter_keypress(this->imContext.get(), event)) {
         this->needImReset = true;
         if (!canInsert) {
             this->resetImContext();
         }
         obscure = canInsert;
         retval = true;
+    } else if (gtk_bindings_activate_event(G_OBJECT(this->textWidget.get()), event)) {
+        return true;
     } else if ((event->state & modifiers) == GDK_CONTROL_MASK) {
-        // Bold text
         if (event->keyval == GDK_KEY_b || event->keyval == GDK_KEY_B) {
-            toggleBold();
+            toggleBoldFace();
             return true;
         }
-        // Increase text size
         if (event->keyval == GDK_KEY_plus) {
-            incSize();
+            increaseFontSize();
             return true;
         }
-        // Decrease text size
         if (event->keyval == GDK_KEY_minus) {
-            decSize();
+            decreaseFontSize();
             return true;
         }
     } else if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_ISO_Enter ||
@@ -319,9 +314,9 @@ auto TextEditor::onKeyPressEvent(GdkEventKey* event) -> bool {
 auto TextEditor::onKeyReleaseEvent(GdkEventKey* event) -> bool {
     GtkTextIter iter;
 
-    GtkTextMark* insert = gtk_text_buffer_get_insert(this->buffer);
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &iter, insert);
-    if (gtk_text_iter_can_insert(&iter, true) && gtk_im_context_filter_keypress(this->imContext, event)) {
+    GtkTextMark* insert = gtk_text_buffer_get_insert(this->buffer.get());
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &iter, insert);
+    if (gtk_text_iter_can_insert(&iter, true) && gtk_im_context_filter_keypress(this->imContext.get(), event)) {
         this->needImReset = true;
         return true;
     }
@@ -337,55 +332,50 @@ void TextEditor::toggleOverwrite() {
  * I know it's a bit rough and duplicated
  * Improve that later on...
  */
-void TextEditor::decSize() {
+void TextEditor::decreaseFontSize() {
     XojFont& font = text->getFont();
-    double fontSize = font.getSize();
-    fontSize--;
-    font.setSize(fontSize);
-    setFont(font);
+    if (double size = font.getSize(); size > 1) {
+        font.setSize(font.getSize() - 1);
+        afterFontChange();
+    }
 }
 
-void TextEditor::incSize() {
+void TextEditor::increaseFontSize() {
     XojFont& font = text->getFont();
-    double fontSize = font.getSize();
-    fontSize++;
-    font.setSize(fontSize);
-    setFont(font);
+    font.setSize(font.getSize() + 1);
+    afterFontChange();
 }
 
-void TextEditor::toggleBold() {
+void TextEditor::toggleBoldFace() {
     // get the current/used font
     XojFont& font = text->getFont();
-    string fontName = font.getName();
+    std::string fontName = font.getName();
 
-    std::size_t found = fontName.find("Bold");
+    std::size_t found = fontName.find(" Bold");
 
     // toggle bold
-    if (found == string::npos) {
+    if (found == std::string::npos) {
         fontName = fontName + " Bold";
     } else {
-        fontName = fontName.substr(0, found - 1);
+        fontName = fontName.erase(found, 5);
     }
 
-    // commit changes
     font.setName(fontName);
-    setFont(font);
-
-    // this->repaintEditor();
+    afterFontChange();
 }
 
 void TextEditor::selectAtCursor(TextEditor::SelectType ty) {
-    GtkTextMark* mark = gtk_text_buffer_get_insert(this->buffer);
+    GtkTextMark* mark = gtk_text_buffer_get_insert(this->buffer.get());
     GtkTextIter startPos;
     GtkTextIter endPos;
-    gtk_text_buffer_get_selection_bounds(this->buffer, &startPos, &endPos);
+    gtk_text_buffer_get_selection_bounds(this->buffer.get(), &startPos, &endPos);
     const auto searchFlag = GTK_TEXT_SEARCH_TEXT_ONLY;  // To be used to find double newlines
 
     switch (ty) {
-        case TextEditor::SelectType::word:
+        case TextEditor::SelectType::WORD:
             // Do nothing if cursor is over whitespace
             GtkTextIter currentPos;
-            gtk_text_buffer_get_iter_at_mark(this->buffer, &currentPos, mark);
+            gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &currentPos, mark);
             if (!gtk_text_iter_inside_word(&currentPos)) {
                 return;
             }
@@ -397,7 +387,7 @@ void TextEditor::selectAtCursor(TextEditor::SelectType ty) {
                 gtk_text_iter_forward_word_end(&endPos);
             }
             break;
-        case TextEditor::SelectType::paragraph:
+        case TextEditor::SelectType::PARAGRAPH:
             // Note that a GTK "paragraph" is a line, so there's no nice one-liner.
             // We define a paragraph as text separated by double newlines.
             while (!gtk_text_iter_is_start(&startPos)) {
@@ -426,12 +416,12 @@ void TextEditor::selectAtCursor(TextEditor::SelectType ty) {
                 gtk_text_iter_forward_line(&endPos);
             }
             break;
-        case TextEditor::SelectType::all:
-            gtk_text_buffer_get_bounds(this->buffer, &startPos, &endPos);
+        case TextEditor::SelectType::ALL:
+            gtk_text_buffer_get_bounds(this->buffer.get(), &startPos, &endPos);
             break;
     }
 
-    gtk_text_buffer_select_range(this->buffer, &startPos, &endPos);
+    gtk_text_buffer_select_range(this->buffer.get(), &startPos, &endPos);
 
     this->repaintEditor();
 }
@@ -457,7 +447,7 @@ void TextEditor::moveCursor(GtkMovementStep step, int count, bool extendSelectio
     //	}
 
     GtkTextIter insert;
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &insert, gtk_text_buffer_get_insert(this->buffer));
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &insert, gtk_text_buffer_get_insert(this->buffer.get()));
     GtkTextIter newplace = insert;
 
     bool updateVirtualCursor = true;
@@ -519,9 +509,9 @@ void TextEditor::moveCursor(GtkMovementStep step, int count, bool extendSelectio
 
         case GTK_MOVEMENT_BUFFER_ENDS:
             if (count > 0) {
-                gtk_text_buffer_get_end_iter(this->buffer, &newplace);
+                gtk_text_buffer_get_end_iter(this->buffer.get(), &newplace);
             } else if (count < 0) {
-                gtk_text_buffer_get_iter_at_offset(this->buffer, &newplace, 0);
+                gtk_text_buffer_get_iter_at_offset(this->buffer.get(), &newplace, 0);
             }
             break;
 
@@ -537,27 +527,25 @@ void TextEditor::moveCursor(GtkMovementStep step, int count, bool extendSelectio
     }
 
     if (gtk_text_iter_equal(&insert, &newplace)) {
-        gtk_widget_error_bell(this->widget);
+        gtk_widget_error_bell(this->xournalWidget);
     }
 
     if (this->cursorBlink) {
         this->cursorVisible = false;
-        if (this->blinkTimeout) {
-            g_source_remove(this->blinkTimeout);
-        }
-        blinkCallback(this);
+        BlinkTimer::callback(this);
     } else {
         repaintCursor();
     }
 }
 
-void TextEditor::findPos(GtkTextIter* iter, double xPos, double yPos) {
+void TextEditor::findPos(GtkTextIter* iter, double xPos, double yPos) const {
     if (!this->layout) {
         return;
     }
 
     int index = 0;
-    if (!pango_layout_xy_to_index(this->layout, xPos * PANGO_SCALE, yPos * PANGO_SCALE, &index, nullptr)) {
+    if (!pango_layout_xy_to_index(this->layout.get(), static_cast<int>(std::round(xPos * PANGO_SCALE)),
+                                  static_cast<int>(std::round(yPos * PANGO_SCALE)), &index, nullptr)) {
         index++;
     }
 
@@ -565,7 +553,7 @@ void TextEditor::findPos(GtkTextIter* iter, double xPos, double yPos) {
 }
 
 void TextEditor::contentsChanged(bool forceCreateUndoAction) {
-    string currentText = getText()->getText();
+    std::string currentText = getText()->getText();
 
     // I know it's a little bit bulky, but ABS on subtracted size_t is a little bit unsafe
     if (forceCreateUndoAction ||
@@ -583,7 +571,7 @@ void TextEditor::contentsChanged(bool forceCreateUndoAction) {
     }
 }
 
-auto TextEditor::getFirstUndoAction() -> UndoAction* {
+auto TextEditor::getFirstUndoAction() const -> UndoAction* {
     if (!this->undoActions.empty()) {
         return &this->undoActions.front().get();
     }
@@ -591,7 +579,7 @@ auto TextEditor::getFirstUndoAction() -> UndoAction* {
 }
 
 void TextEditor::markPos(double x, double y, bool extendSelection) {
-    if (this->layout == nullptr) {
+    if (!this->layout) {
         this->markPosX = x;
         this->markPosY = y;
         this->markPosExtendSelection = extendSelection;
@@ -599,8 +587,8 @@ void TextEditor::markPos(double x, double y, bool extendSelection) {
         return;
     }
     GtkTextIter iter;
-    GtkTextMark* insert = gtk_text_buffer_get_insert(this->buffer);
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &iter, insert);
+    GtkTextMark* insert = gtk_text_buffer_get_insert(this->buffer.get());
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &iter, insert);
     GtkTextIter newplace = iter;
 
     findPos(&newplace, x, y);
@@ -634,13 +622,14 @@ void TextEditor::jumpALine(GtkTextIter* textIter, int count) {
         return;
     }
 
-    PangoLayoutLine* line = pango_layout_get_line(this->layout, cursorLine + count);
+    PangoLayoutLine* line = pango_layout_get_line(this->layout.get(), cursorLine + count);
     if (line == nullptr) {
         return;
     }
 
     int index = 0;
-    pango_layout_line_x_to_index(line, this->virtualCursor * PANGO_SCALE, &index, nullptr);
+    pango_layout_line_x_to_index(line, static_cast<int>(std::round(this->virtualCursor * PANGO_SCALE)), &index,
+                                 nullptr);
 
     index = getCharOffset(index);
 
@@ -650,13 +639,13 @@ void TextEditor::jumpALine(GtkTextIter* textIter, int count) {
 void TextEditor::calcVirtualCursor() {
     this->virtualCursor = 0;
     GtkTextIter cursorIter = {nullptr};
-    GtkTextMark* cursor = gtk_text_buffer_get_insert(this->buffer);
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &cursorIter, cursor);
+    GtkTextMark* cursor = gtk_text_buffer_get_insert(this->buffer.get());
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &cursorIter, cursor);
 
     int offset = getByteOffset(gtk_text_iter_get_offset(&cursorIter));
 
     PangoRectangle rect = {0};
-    pango_layout_index_to_pos(this->layout, offset, &rect);
+    pango_layout_index_to_pos(this->layout.get(), offset, &rect);
     this->virtualCursor = (static_cast<double>(rect.x)) / PANGO_SCALE;
 }
 
@@ -664,11 +653,11 @@ void TextEditor::moveCursor(const GtkTextIter* newLocation, gboolean extendSelec
     Control* control = gui->getXournal()->getControl();
 
     if (extendSelection) {
-        gtk_text_buffer_move_mark_by_name(this->buffer, "insert", newLocation);
-        control->setCopyPasteEnabled(true);
+        gtk_text_buffer_move_mark_by_name(this->buffer.get(), "insert", newLocation);
+        control->setCopyCutEnabled(true);
     } else {
-        gtk_text_buffer_place_cursor(this->buffer, newLocation);
-        control->setCopyPasteEnabled(false);
+        gtk_text_buffer_place_cursor(this->buffer.get(), newLocation);
+        control->setCopyCutEnabled(false);
     }
 
     this->repaintEditor();
@@ -700,14 +689,14 @@ void TextEditor::deleteFromCursor(GtkDeleteType type, int count) {
 
     if (type == GTK_DELETE_CHARS) {
         // Char delete deletes the selection, if one exists
-        if (gtk_text_buffer_delete_selection(this->buffer, true, true)) {
+        if (gtk_text_buffer_delete_selection(this->buffer.get(), true, true)) {
             this->contentsChanged(true);
             this->repaintEditor();
             return;
         }
     }
 
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &insert, gtk_text_buffer_get_insert(this->buffer));
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &insert, gtk_text_buffer_get_insert(this->buffer.get()));
 
     GtkTextIter start = insert;
     GtkTextIter end = insert;
@@ -790,20 +779,20 @@ void TextEditor::deleteFromCursor(GtkDeleteType type, int count) {
     }
 
     if (!gtk_text_iter_equal(&start, &end)) {
-        gtk_text_buffer_begin_user_action(this->buffer);
+        gtk_text_buffer_begin_user_action(this->buffer.get());
 
-        if (gtk_text_buffer_delete_interactive(this->buffer, &start, &end, true)) {
+        if (gtk_text_buffer_delete_interactive(this->buffer.get(), &start, &end, true)) {
             /*if (leave_one) // leave_one is statically false
             {
                 gtk_text_buffer_insert_interactive_at_cursor(this->buffer, " ", 1, true);
             }*/
         } else {
-            gtk_widget_error_bell(this->widget);
+            gtk_widget_error_bell(this->xournalWidget);
         }
 
-        gtk_text_buffer_end_user_action(this->buffer);
+        gtk_text_buffer_end_user_action(this->buffer.get());
     } else {
-        gtk_widget_error_bell(this->widget);
+        gtk_widget_error_bell(this->xournalWidget);
     }
 
     this->contentsChanged();
@@ -816,89 +805,71 @@ void TextEditor::backspace() {
     resetImContext();
 
     // Backspace deletes the selection, if one exists
-    if (gtk_text_buffer_delete_selection(this->buffer, true, true)) {
-        this->repaintEditor();
+    if (gtk_text_buffer_delete_selection(this->buffer.get(), true, true)) {
         this->contentsChanged();
+        this->repaintEditor();
         return;
     }
 
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &insert, gtk_text_buffer_get_insert(this->buffer));
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &insert, gtk_text_buffer_get_insert(this->buffer.get()));
 
-    if (gtk_text_buffer_backspace(this->buffer, &insert, true, true)) {
-        this->repaintEditor();
+    if (gtk_text_buffer_backspace(this->buffer.get(), &insert, true, true)) {
         this->contentsChanged();
+        this->repaintEditor();
     } else {
-        gtk_widget_error_bell(this->widget);
+        gtk_widget_error_bell(this->xournalWidget);
     }
 }
 
-auto TextEditor::getSelection() -> string {
-    GtkTextIter start, end;
-    char* text = nullptr;
-    string s;
+auto TextEditor::getSelection() const -> std::string {
+    std::string s;
 
-    if (gtk_text_buffer_get_selection_bounds(buffer, &start, &end)) {
-        text = gtk_text_iter_get_text(&start, &end);
-        s = text;
-        g_free(text);
+    if (GtkTextIter start, end; gtk_text_buffer_get_selection_bounds(this->buffer.get(), &start, &end)) {
+        auto text = xoj::util::OwnedCString::assumeOwnership(gtk_text_iter_get_text(&start, &end));
+        s = text.get();
     }
     return s;
 }
 
-void TextEditor::copyToCliboard() {
-    GtkClipboard* clipboard = gtk_widget_get_clipboard(this->widget, GDK_SELECTION_CLIPBOARD);
-    gtk_text_buffer_copy_clipboard(this->buffer, clipboard);
+void TextEditor::copyToClipboard() const {
+    GtkClipboard* clipboard = gtk_widget_get_clipboard(this->xournalWidget, GDK_SELECTION_CLIPBOARD);
+    gtk_text_buffer_copy_clipboard(this->buffer.get(), clipboard);
 }
 
 void TextEditor::cutToClipboard() {
-    GtkClipboard* clipboard = gtk_widget_get_clipboard(this->widget, GDK_SELECTION_CLIPBOARD);
-    gtk_text_buffer_cut_clipboard(this->buffer, clipboard, true);
+    GtkClipboard* clipboard = gtk_widget_get_clipboard(this->xournalWidget, GDK_SELECTION_CLIPBOARD);
+    gtk_text_buffer_cut_clipboard(this->buffer.get(), clipboard, true);
 
-    this->repaintEditor();
     this->contentsChanged(true);
+    this->repaintEditor();
 }
 
 void TextEditor::pasteFromClipboard() {
-    GtkClipboard* clipboard = gtk_widget_get_clipboard(this->widget, GDK_SELECTION_CLIPBOARD);
-    gtk_text_buffer_paste_clipboard(this->buffer, clipboard, nullptr, true);
+    GtkClipboard* clipboard = gtk_widget_get_clipboard(this->xournalWidget, GDK_SELECTION_CLIPBOARD);
+    gtk_text_buffer_paste_clipboard(this->buffer.get(), clipboard, nullptr, true);
 }
 
 void TextEditor::bufferPasteDoneCallback(GtkTextBuffer* buffer, GtkClipboard* clipboard, TextEditor* te) {
-    te->repaintEditor();
     te->contentsChanged(true);
+    te->repaintEditor();
 }
 
 void TextEditor::resetImContext() {
     if (this->needImReset) {
         this->needImReset = false;
-        gtk_im_context_reset(this->imContext);
+        gtk_im_context_reset(this->imContext.get());
     }
 }
 
-void TextEditor::repaintCursor() {
-    double x = this->text->getX();
-    double y = this->text->getY();
-    this->gui->repaintArea(x, y, x + this->text->getElementWidth(), y + this->text->getElementHeight());
-}
-
-#define CURSOR_ON_MULTIPLIER 2
-#define CURSOR_OFF_MULTIPLIER 1
-#define CURSOR_PEND_MULTIPLIER 3
-#define CURSOR_DIVIDER 3
+void TextEditor::repaintCursor() { this->gui->repaintElement(this->text); }
 
 /*
  * Blink!
  */
-auto TextEditor::blinkCallback(TextEditor* te) -> gint {
-    if (te->cursorVisible) {
-        te->blinkTimeout = gdk_threads_add_timeout(te->cursorBlinkTime * CURSOR_OFF_MULTIPLIER / CURSOR_DIVIDER,
-                                                   reinterpret_cast<GSourceFunc>(blinkCallback), te);
-    } else {
-        te->blinkTimeout = gdk_threads_add_timeout(te->cursorBlinkTime * CURSOR_ON_MULTIPLIER / CURSOR_DIVIDER,
-                                                   reinterpret_cast<GSourceFunc>(blinkCallback), te);
-    }
-
+auto TextEditor::BlinkTimer::callback(TextEditor* te) -> bool {
     te->cursorVisible = !te->cursorVisible;
+    auto time = te->cursorVisible ? te->cursorBlinkingTimeOn : te->cursorBlinkingTimeOff;
+    te->blinkTimer = gdk_threads_add_timeout(time, reinterpret_cast<GSourceFunc>(callback), te);
 
     te->repaintCursor();
 
@@ -906,26 +877,97 @@ auto TextEditor::blinkCallback(TextEditor* te) -> gint {
     return false;
 }
 
-void TextEditor::repaintEditor() { this->gui->repaintPage(); }
+void TextEditor::setTextToPangoLayout(PangoLayout* pl) const {
+    std::string txt = this->text->getText();
+
+    if (!this->preeditString.empty()) {
+        // When using an Input Method, we need to insert the preeditString into the text at the cursor location
+
+        // Get the byte position of the cursor in the string, so we can insert at the right place
+        int pos = 0;
+        {
+            // Get an iterator at the cursor location
+            GtkTextIter it = {nullptr};
+            GtkTextMark* cursor = gtk_text_buffer_get_insert(this->buffer.get());
+            gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &it, cursor);
+            // Bytes from beginning of line to iterator
+            pos = gtk_text_iter_get_line_index(&it);
+            gtk_text_iter_set_line_index(&it, 0);
+            // Count bytes of previous lines
+            while (gtk_text_iter_backward_line(&it)) {
+                pos += gtk_text_iter_get_bytes_in_line(&it);
+            }
+        }
+        txt.insert(static_cast<size_t>(pos), this->preeditString);
+
+        xoj::util::PangoAttrListSPtr attrlist(pango_attr_list_new(), xoj::util::adopt);
+        pango_attr_list_splice(attrlist.get(), this->preeditAttrList.get(), pos,
+                               static_cast<int>(preeditString.length()));
+
+        pango_layout_set_attributes(pl, attrlist.get());
+    }
+    pango_layout_set_text(pl, txt.c_str(), static_cast<int>(txt.length()));
+}
+
+auto TextEditor::computeBoundingRect() -> xoj::util::Rectangle<double> {
+    /*
+     * We draw on a fake surface to get the size of the printed text
+     * See also TextView::calcSize
+     *
+     * NB: we cannot rely on TextView::calcSize directly, since it would not take the size changes due to the IM
+     * preeditString into account.
+     */
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
+    cairo_t* cr = cairo_create(surface);
+    auto* textElement = this->getText();
+
+    PangoLayout* pl = xoj::view::TextView::initPango(cr, textElement);
+
+    setTextToPangoLayout(pl);
+
+    int w = 0;
+    int h = 0;
+    pango_layout_get_size(pl, &w, &h);
+    double width = (static_cast<double>(w)) / PANGO_SCALE;
+    double height = (static_cast<double>(h)) / PANGO_SCALE;
+    g_object_unref(pl);
+
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+
+    return xoj::util::Rectangle<double>(textElement->getX(), textElement->getY(), width, height);
+}
+
+
+void TextEditor::repaintEditor() {
+    auto rect = this->computeBoundingRect();
+    this->previousBoundingBox.unite(rect);
+    const double zoom = this->gui->getXournal()->getZoom();
+    const double padding = (BORDER_WIDTH_IN_PIXELS + PADDING_IN_PIXELS) / zoom;
+    this->gui->repaintRect(this->previousBoundingBox.x - padding, this->previousBoundingBox.y - padding,
+                           this->previousBoundingBox.width + 2.0 * padding,
+                           this->previousBoundingBox.height + 2.0 * padding);
+    this->previousBoundingBox = rect;
+}
 
 /**
  * Calculate the UTF-8 Char offset into a byte offset.
  */
-auto TextEditor::getByteOffset(int charOffset) -> int {
-    const char* text = pango_layout_get_text(this->layout);
-    return g_utf8_offset_to_pointer(text, charOffset) - text;
+auto TextEditor::getByteOffset(int charOffset) const -> int {
+    const char* text = pango_layout_get_text(this->layout.get());
+    return static_cast<int>(g_utf8_offset_to_pointer(text, charOffset) - text);
 }
 
 /**
  * Calculate the UTF-8 Char byte offset into a char offset.
  */
-auto TextEditor::getCharOffset(int byteOffset) -> int {
-    const char* text = pango_layout_get_text(this->layout);
+auto TextEditor::getCharOffset(int byteOffset) const -> int {
+    const char* text = pango_layout_get_text(this->layout.get());
 
-    return g_utf8_pointer_to_offset(text, text + byteOffset);
+    return static_cast<int>(g_utf8_pointer_to_offset(text, text + byteOffset));
 }
 
-void TextEditor::drawCursor(cairo_t* cr, double x, double y, double height, double zoom) {
+void TextEditor::drawCursor(cairo_t* cr, double x, double y, double height, double zoom) const {
     double cw = 2 / zoom;
     double dX = 0;
     if (this->cursorOverwrite) {
@@ -946,19 +988,15 @@ void TextEditor::drawCursor(cairo_t* cr, double x, double y, double height, doub
             cairo_restore(cr);
         }
     }
-    DocumentView::applyColor(cr, this->text);
+    Util::cairo_set_source_rgbi(cr, this->text->getColor());
 }
 
-void TextEditor::paint(cairo_t* cr, GdkRectangle* repaintRect, double zoom) {
+void TextEditor::paint(cairo_t* cr, double zoom) {
     GdkRGBA selectionColor = this->gui->getSelectionColor();
 
     cairo_save(cr);
 
-    DocumentView::applyColor(cr, this->text);
-
-    GtkTextIter cursorIter = {nullptr};
-    GtkTextMark* cursor = gtk_text_buffer_get_insert(this->buffer);
-    gtk_text_buffer_get_iter_at_mark(this->buffer, &cursorIter, cursor);
+    Util::cairo_set_source_rgbi(cr, this->text->getColor());
 
     double x0 = this->text->getX();
     double y0 = this->text->getY();
@@ -966,73 +1004,57 @@ void TextEditor::paint(cairo_t* cr, GdkRectangle* repaintRect, double zoom) {
     double x1 = this->gui->getX();
     double y1 = this->gui->getY();
 
-    if (this->layout == nullptr) {
-        this->layout = TextView::initPango(cr, this->text);
+    if (!this->layout) {
+        this->layout.reset(xoj::view::TextView::initPango(cr, this->text), xoj::util::adopt);
     }
 
-    if (!this->preeditString.empty()) {
-        string text = this->text->getText();
-        int offset = gtk_text_iter_get_offset(&cursorIter);
-        int pos = gtk_text_iter_get_line_index(&cursorIter);
+    this->setTextToPangoLayout(this->layout.get());
 
-        for (gtk_text_iter_set_line_index(&cursorIter, 0); gtk_text_iter_backward_line(&cursorIter);) {
-            pos += gtk_text_iter_get_bytes_in_line(&cursorIter);
-        }
-        gtk_text_iter_set_offset(&cursorIter, offset);
-        string txt = text.substr(0, pos) + preeditString + text.substr(pos);
-
-        PangoAttrList* attrlist = pango_attr_list_new();
-        PangoAttrList* preedit_attrlist = this->preeditAttrList;
-        pango_attr_list_splice(attrlist, preedit_attrlist, pos, preeditString.length());
-        pango_layout_set_attributes(this->layout, attrlist);
-        pango_attr_list_unref(attrlist);
-        attrlist = nullptr;
-        pango_layout_set_text(this->layout, txt.c_str(), txt.length());
-    } else {
-        string txt = this->text->getText();
-        pango_layout_set_text(this->layout, txt.c_str(), txt.length());
-
+    if (this->preeditString.empty()) {
         GtkTextIter start;
         GtkTextIter end;
-        bool hasSelection = gtk_text_buffer_get_selection_bounds(this->buffer, &start, &end);
+        bool hasSelection = gtk_text_buffer_get_selection_bounds(this->buffer.get(), &start, &end);
 
         if (hasSelection) {
             auto selectionColorU16 = Util::GdkRGBA_to_ColorU16(selectionColor);
             PangoAttribute* attrib =
                     pango_attr_background_new(selectionColorU16.red, selectionColorU16.green, selectionColorU16.blue);
-            attrib->start_index = getByteOffset(gtk_text_iter_get_offset(&start));
-            attrib->end_index = getByteOffset(gtk_text_iter_get_offset(&end));
+            attrib->start_index = static_cast<unsigned int>(getByteOffset(gtk_text_iter_get_offset(&start)));
+            attrib->end_index = static_cast<unsigned int>(getByteOffset(gtk_text_iter_get_offset(&end)));
 
-            PangoAttrList* attrlist = pango_attr_list_new();
-            pango_attr_list_insert(attrlist, attrib);
-            pango_layout_set_attributes(this->layout, attrlist);
-            pango_attr_list_unref(attrlist);
-            attrlist = nullptr;
+            xoj::util::PangoAttrListSPtr attrlist(pango_attr_list_new(), xoj::util::adopt);
+            pango_attr_list_insert(attrlist.get(), attrib);  // attrlist takes ownership of attrib
+            pango_layout_set_attributes(this->layout.get(), attrlist.get());
         } else {
             // remove all attributes
             PangoAttrList* attrlist = pango_attr_list_new();
-            pango_layout_set_attributes(this->layout, attrlist);
+            pango_layout_set_attributes(this->layout.get(), attrlist);
             pango_attr_list_unref(attrlist);
             attrlist = nullptr;
         }
     }
 
-    pango_cairo_show_layout(cr, this->layout);
+    pango_cairo_show_layout(cr, this->layout.get());
     int w = 0;
     int h = 0;
-    pango_layout_get_size(this->layout, &w, &h);
+    pango_layout_get_size(this->layout.get(), &w, &h);
     double width = (static_cast<double>(w)) / PANGO_SCALE;
     double height = (static_cast<double>(h)) / PANGO_SCALE;
+
+
+    GtkTextIter cursorIter = {nullptr};
+    GtkTextMark* cursor = gtk_text_buffer_get_insert(this->buffer.get());
+    gtk_text_buffer_get_iter_at_mark(this->buffer.get(), &cursorIter, cursor);
 
     int offset = gtk_text_iter_get_offset(&cursorIter);
     PangoRectangle rect = {0};
     int pcursInd = 0;
     if (!this->preeditString.empty() && this->preeditCursor != 0) {
         const gchar* preeditText = this->preeditString.c_str();
-        pcursInd = g_utf8_offset_to_pointer(preeditText, preeditCursor) - preeditText;
+        pcursInd = static_cast<int>(g_utf8_offset_to_pointer(preeditText, preeditCursor) - preeditText);
     }
     int pangoOffset = getByteOffset(offset) + pcursInd;
-    pango_layout_index_to_pos(this->layout, pangoOffset, &rect);
+    pango_layout_index_to_pos(this->layout.get(), pangoOffset, &rect);
     double cX = (static_cast<double>(rect.x)) / PANGO_SCALE;
     double cY = (static_cast<double>(rect.y)) / PANGO_SCALE;
     double cHeight = (static_cast<double>(rect.height)) / PANGO_SCALE;
@@ -1042,10 +1064,11 @@ void TextEditor::paint(cairo_t* cr, GdkRectangle* repaintRect, double zoom) {
     cairo_restore(cr);
 
     // set the line always the same size on display
-    cairo_set_line_width(cr, 1 / zoom);
+    cairo_set_line_width(cr, BORDER_WIDTH_IN_PIXELS / zoom);
     gdk_cairo_set_source_rgba(cr, &selectionColor);
 
-    cairo_rectangle(cr, x0 - 5 / zoom, y0 - 5 / zoom, width + 10 / zoom, height + 10 / zoom);
+    cairo_rectangle(cr, x0 - PADDING_IN_PIXELS / zoom, y0 - PADDING_IN_PIXELS / zoom,
+                    width + 2 * PADDING_IN_PIXELS / zoom, height + 2 * PADDING_IN_PIXELS / zoom);
     cairo_stroke(cr);
 
     // Notify the IM of the app's window and cursor position.
@@ -1059,7 +1082,7 @@ void TextEditor::paint(cairo_t* cr, GdkRectangle* repaintRect, double zoom) {
     // cursorRect.width = static_cast<int>(zoom * width + 20);
     // cursorRect.height = static_cast<int>(zoom * height + 20);
     // // This is also useful, so it is good to make it user's preference.
-    gtk_im_context_set_cursor_location(this->imContext, &cursorRect);
+    gtk_im_context_set_cursor_location(this->imContext.get(), &cursorRect);
 
     this->text->setWidth(width);
     this->text->setHeight(height);

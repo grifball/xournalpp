@@ -1,20 +1,38 @@
 #include "SidebarPreviewLayers.h"
 
-#include "control/Control.h"
-#include "control/PdfCache.h"
-#include "control/layer/LayerController.h"
-#include "util/i18n.h"
+#include <algorithm>  // for max
+#include <vector>     // for vector
 
-#include "SidebarPreviewLayerEntry.h"
+#include <gtk/gtk.h>  // for gtk...
 
-SidebarPreviewLayers::SidebarPreviewLayers(Control* control, GladeGui* gui, SidebarToolbar* toolbar, bool stacked):
+#include "control/Control.h"                                      // for Con...
+#include "control/layer/LayerController.h"                        // for Lay...
+#include "gui/sidebar/previews/base/SidebarPreviewBaseEntry.h"    // for Sid...
+#include "gui/sidebar/previews/layer/SidebarLayersContextMenu.h"  // for Sid...
+#include "model/PageRef.h"                                        // for Pag...
+#include "model/XojPage.h"                                        // for Xoj...
+#include "util/Util.h"                                            // for npos
+#include "util/i18n.h"                                            // for _
+
+#include "SidebarPreviewLayerEntry.h"  // for Sid...
+
+class GladeGui;
+
+SidebarPreviewLayers::SidebarPreviewLayers(Control* control, GladeGui* gui, SidebarToolbar* toolbar, bool stacked,
+                                           std::shared_ptr<SidebarLayersContextMenu> contextMenu):
         SidebarPreviewBase(control, gui, toolbar),
         lc(control->getLayerController()),
         stacked(stacked),
-        iconNameHelper(control->getSettings()) {
+        iconNameHelper(control->getSettings()),
+        contextMenu(contextMenu) {
     LayerCtrlListener::registerListener(lc);
 
     this->toolbar->setButtonEnabled(SIDEBAR_ACTION_NONE);
+
+    // initialize the context menu action sensitivity
+    Layer::Index layerIndex = this->lc->getLayerCount() - this->lc->getCurrentLayerId();
+    SidebarActions actions = SidebarPreviewLayers::getViableActions(layerIndex, this->lc->getLayerCount());
+    this->contextMenu->setActionsSensitivity(actions);
 }
 
 SidebarPreviewLayers::~SidebarPreviewLayers() {
@@ -43,6 +61,10 @@ void SidebarPreviewLayers::actionPerformed(SidebarActions action) {
         case SIDEBAR_ACTION_DELETE:
             control->getLayerController()->deleteCurrentLayer();
             break;
+        case SIDEBAR_ACTION_MERGE_DOWN: {
+            control->getLayerController()->mergeCurrentLayerDown();
+            break;
+        }
         default:
             break;
     }
@@ -96,12 +118,13 @@ void SidebarPreviewLayers::updatePreviews() {
         return;
     }
 
-    int layerCount = page->getLayerCount();
+    auto layerCount = page->getLayerCount();
 
     size_t index = 0;
-    for (int i = layerCount; i >= 0; i--) {
+    for (auto i = layerCount + 1; i != 0;) {
+        --i;
         std::string name = lc->getLayerNameById(i);
-        SidebarPreviewBaseEntry* p = new SidebarPreviewLayerEntry(this, page, i - 1, name, index++, this->stacked);
+        SidebarPreviewBaseEntry* p = new SidebarPreviewLayerEntry(this, page, i, name, index++, this->stacked);
         this->previews.push_back(p);
         gtk_layout_put(GTK_LAYOUT(this->iconViewPreview), p->getWidget(), 0, 0);
     }
@@ -125,17 +148,18 @@ void SidebarPreviewLayers::layerVisibilityChanged() {
         return;
     }
 
-    for (int i = 0; i < static_cast<int>(this->previews.size()); i++) {
-        auto* sp = dynamic_cast<SidebarPreviewLayerEntry*>(this->previews[this->previews.size() - i - 1]);
-        sp->setVisibleCheckbox(p->isLayerVisible(i));
+    Layer::Index i = p->getLayerCount();
+    for (SidebarPreviewBaseEntry* e: this->previews) {
+        dynamic_cast<SidebarPreviewLayerEntry*>(e)->setVisibleCheckbox(p->isLayerVisible(i--));
     }
+    updateSelectedLayer();
 }
 
 void SidebarPreviewLayers::updateSelectedLayer() {
     // Layers are in reverse order (top index: 0, but bottom preview is 0)
-    size_t layerIndex = this->previews.size() - lc->getCurrentLayerId() - 1;
+    size_t entryIndex = this->previews.size() - lc->getCurrentLayerId() - 1;
 
-    if (this->selectedEntry == layerIndex) {
+    if (this->selectedEntry == entryIndex) {
         return;
     }
 
@@ -143,7 +167,7 @@ void SidebarPreviewLayers::updateSelectedLayer() {
         this->previews[this->selectedEntry]->setSelected(false);
     }
 
-    this->selectedEntry = layerIndex;
+    this->selectedEntry = entryIndex;
     if (this->selectedEntry != npos && this->selectedEntry < this->previews.size()) {
         SidebarPreviewBaseEntry* p = this->previews[this->selectedEntry];
         p->setSelected(true);
@@ -175,15 +199,62 @@ void SidebarPreviewLayers::updateSelectedLayer() {
     this->toolbar->setButtonEnabled(static_cast<SidebarActions>(actions));
 }
 
-void SidebarPreviewLayers::layerSelected(size_t layerIndex) {
+void SidebarPreviewLayers::layerSelected(Layer::Index layerIndex) {
     // Layers are in reverse order (top index: 0, but bottom preview is 0)
-    lc->switchToLay(this->previews.size() - layerIndex - 1);
+    lc->switchToLay(lc->getLayerCount() - layerIndex);
     updateSelectedLayer();
+
+    auto actions = SidebarPreviewLayers::getViableActions(layerIndex, this->lc->getLayerCount());
+    this->contextMenu->setActionsSensitivity(SidebarActions(actions));
+}
+
+auto SidebarPreviewLayers::getViableActions(Layer::Index layerIndex, Layer::Index layerCount) -> SidebarActions {
+    /*
+     * If we have no layers (in which case  in the UI an empty background layer
+     * is still shown)
+     */
+    if (layerCount == 0) {
+        return SIDEBAR_ACTION_NONE;
+    }
+
+    /*
+     * Assuming that  we have at least one layer the highest index is the
+     * background, the second-highest is the bottom-most actual layer and the
+     * lowest index (i.E. 0) is the topmost layer.
+     */
+    const auto bgIndex = layerCount;
+    const auto bottomLayerIndex = bgIndex - 1;
+
+    int actions = 0;
+
+    // if we are above the bottom layer, we can merge down
+    if (layerIndex < bottomLayerIndex) {
+        actions |= SIDEBAR_ACTION_MERGE_DOWN;
+    }
+
+    // if we are above the bottom layer, we can move down
+    if (layerIndex < bottomLayerIndex) {
+        actions |= SIDEBAR_ACTION_MOVE_DOWN;
+    }
+
+    if (layerIndex > 0 && layerIndex != bgIndex) {
+        actions |= SIDEBAR_ACTION_MOVE_UP;
+    }
+
+    // if we are not on the background layer, we can duplicate (aka copy) and delete
+    if (layerIndex < bgIndex) {
+        actions |= SIDEBAR_ACTION_COPY;
+        actions |= SIDEBAR_ACTION_DELETE;
+    }
+
+    return SidebarActions(actions);
 }
 
 /**
  * A layer was hidden / showed
  */
-void SidebarPreviewLayers::layerVisibilityChanged(int layerIndex, bool enabled) {
+void SidebarPreviewLayers::layerVisibilityChanged(Layer::Index layerIndex, bool enabled) {
     lc->setLayerVisible(layerIndex, enabled);
 }
+
+void SidebarPreviewLayers::openPreviewContextMenu() { this->contextMenu->open(); }

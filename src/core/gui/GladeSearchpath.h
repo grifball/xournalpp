@@ -11,10 +11,9 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <vector>  // for vector
 
-#include "filesystem.h"
+#include "filesystem.h"  // for path
 
 class GladeSearchpath {
 public:
@@ -27,7 +26,7 @@ public:
     /**
      * Searches for a path, return the path, an empty string if not found
      */
-    fs::path findFile(fs::path const& subdir, fs::path const& file);
+    fs::path findFile(fs::path const& subdir, fs::path const& file) const;
 
     /**
      * @return The first search path

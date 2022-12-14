@@ -1,7 +1,9 @@
 #include "util/serializing/ObjectOutputStream.h"
 
-#include "util/serializing/ObjectEncoding.h"
-#include "util/serializing/Serializable.h"
+#include <cairo.h>  // for CAIRO_STATUS_SUCCESS
+
+#include "util/serializing/ObjectEncoding.h"  // for ObjectEncoding
+#include "util/serializing/Serializable.h"    // for XML_VERSION_STR
 
 ObjectOutputStream::ObjectOutputStream(ObjectEncoding* encoder) {
     g_assert(encoder != nullptr);
@@ -58,22 +60,11 @@ void ObjectOutputStream::writeData(const void* data, int len, int width) {
     }
 }
 
-static auto cairoWriteFunction(GString* string, const unsigned char* data, unsigned int length) -> cairo_status_t {
-    g_string_append_len(string, reinterpret_cast<const gchar*>(data), length);
-    return CAIRO_STATUS_SUCCESS;
-}
-
-void ObjectOutputStream::writeImage(cairo_surface_t* img) {
-    GString* imgStr = g_string_sized_new(102400);
-
-    cairo_surface_write_to_png_stream(img, reinterpret_cast<cairo_write_func_t>(&cairoWriteFunction), imgStr);
-
+void ObjectOutputStream::writeImage(const std::string_view& imgData) {
     this->encoder->addStr("_m");
-    this->encoder->addData(&imgStr->len, sizeof(gsize));
-
-    this->encoder->addData(imgStr->str, imgStr->len);
-
-    g_string_free(imgStr, true);
+    size_t len = imgData.length();
+    this->encoder->addData(&len, sizeof(size_t));
+    this->encoder->addData(imgData.data(), static_cast<int>(len));
 }
 
 auto ObjectOutputStream::getStr() -> GString* { return this->encoder->getData(); }

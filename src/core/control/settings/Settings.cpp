@@ -1,16 +1,32 @@
 #include "Settings.h"
 
-#include <cstdint>
-#include <utility>
+#include <algorithm>    // for max
+#include <cstdint>      // for uint32_t, int32_t
+#include <cstdio>       // for sscanf, size_t
+#include <cstdlib>      // for atoi
+#include <cstring>      // for strcmp
+#include <exception>    // for exception
+#include <type_traits>  // for add_const<>::type
+#include <utility>      // for pair, move, make_...
 
-#include "control/DeviceListHelper.h"
-#include "model/FormatDefinitions.h"
-#include "util/PathUtil.h"
-#include "util/Util.h"
-#include "util/i18n.h"
+#include <libxml/globals.h>    // for xmlFree, xmlInden...
+#include <libxml/parser.h>     // for xmlKeepBlanksDefault
+#include <libxml/xmlstring.h>  // for xmlStrcmp, xmlChar
 
-#include "ButtonConfig.h"
-#include "filesystem.h"
+#include "control/DeviceListHelper.h"               // for InputDevice
+#include "control/ToolEnums.h"                      // for ERASER_TYPE_NONE
+#include "control/settings/LatexSettings.h"         // for LatexSettings
+#include "control/settings/SettingsEnums.h"         // for InputDeviceTypeOp...
+#include "gui/toolbarMenubar/model/ColorPalette.h"  // for Palette
+#include "model/FormatDefinitions.h"                // for FormatUnits, XOJ_...
+#include "util/Color.h"
+#include "util/PathUtil.h"                          // for getConfigFile
+#include "util/Util.h"                              // for PRECISION_FORMAT_...
+#include "util/i18n.h"                              // for _
+
+#include "ButtonConfig.h"  // for ButtonConfig
+#include "config-dev.h"    // for PALETTE_FILE
+#include "filesystem.h"    // for path, u8path, exists
 
 
 using std::string;
@@ -20,6 +36,7 @@ constexpr auto DEFAULT_FONT_SIZE = 12;
 
 #define SAVE_BOOL_PROP(var) xmlNode = saveProperty((const char*)#var, (var) ? "true" : "false", root)
 #define SAVE_STRING_PROP(var) xmlNode = saveProperty((const char*)#var, (var).empty() ? "" : (var).c_str(), root)
+#define SAVE_FONT_PROP(var) xmlNode = saveProperty((const char*)#var, var.asString().c_str(), root)
 #define SAVE_INT_PROP(var) xmlNode = saveProperty((const char*)#var, var, root)
 #define SAVE_UINT_PROP(var) xmlNode = savePropertyUnsigned((const char*)#var, var, root)
 #define SAVE_DOUBLE_PROP(var) xmlNode = savePropertyDouble((const char*)#var, var, root)
@@ -86,6 +103,7 @@ void Settings::loadDefault() {
     this->autoloadPdfXoj = true;
 
     this->stylusCursorType = STYLUS_CURSOR_DOT;
+    this->iconTheme = ICON_THEME_COLOR;
     this->highlightPosition = false;
     this->cursorHighlightColor = 0x80FFFF00;  // Yellow with 50% opacity
     this->cursorHighlightRadius = 30.0;
@@ -116,6 +134,8 @@ void Settings::loadDefault() {
     this->snapGridTolerance = 0.50;
     this->snapGridSize = DEFAULT_GRID_SIZE;
 
+    this->strokeRecognizerMinSize = 40;
+
     this->touchDrawing = false;
     this->gtkTouchInertialScrolling = true;
 
@@ -123,25 +143,25 @@ void Settings::loadDefault() {
 
     // Eraser
     this->buttonConfig[BUTTON_ERASER] =
-            new ButtonConfig(TOOL_ERASER, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_ERASER, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Middle button
     this->buttonConfig[BUTTON_MOUSE_MIDDLE] =
-            new ButtonConfig(TOOL_HAND, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_HAND, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Right button
     this->buttonConfig[BUTTON_MOUSE_RIGHT] =
-            new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Touch
     this->buttonConfig[BUTTON_TOUCH] =
-            new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Default config
     this->buttonConfig[BUTTON_DEFAULT] =
-            new ButtonConfig(TOOL_PEN, Color{0x000000U}, TOOL_SIZE_FINE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_PEN, Colors::black, TOOL_SIZE_FINE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Pen button 1
     this->buttonConfig[BUTTON_STYLUS_ONE] =
-            new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Pen button 2
     this->buttonConfig[BUTTON_STYLUS_TWO] =
-            new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
 
     this->fullscreenHideElements = "mainMenubar";
     this->presentationHideElements = "mainMenubar,sidebarContents";
@@ -154,10 +174,10 @@ void Settings::loadDefault() {
     this->preloadPagesAfter = 5U;
     this->eagerPageCleanup = true;
 
-    this->selectionBorderColor = 0xff0000U;  // red
-    this->selectionMarkerColor = 0x729fcfU;  // light blue
+    this->selectionBorderColor = Colors::red;
+    this->selectionMarkerColor = Colors::xopp_cornflowerblue;
 
-    this->backgroundColor = 0xdcdad5U;
+    this->backgroundColor = Colors::xopp_gainsboro02;
 
     // clang-format off
 	this->pageTemplate = "xoj/template\ncopyLastPageSettings=true\nsize=595.275591x841.889764\nbackgroundType=lined\nbackgroundColor=#ffffff\n";
@@ -359,6 +379,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->maximized = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("showToolbar")) == 0) {
         this->showToolbar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("filepathShownInTitlebar")) == 0) {
+        this->filepathShownInTitlebar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("showSidebar")) == 0) {
         this->showSidebar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarWidth")) == 0) {
@@ -393,6 +415,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->autoloadPdfXoj = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("stylusCursorType")) == 0) {
         this->stylusCursorType = stylusCursorTypeFromString(reinterpret_cast<const char*>(value));
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("iconTheme")) == 0) {
+        this->iconTheme = iconThemeFromString(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("highlightPosition")) == 0) {
         this->highlightPosition = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("cursorHighlightColor")) == 0) {
@@ -418,7 +442,7 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sizeUnit")) == 0) {
         this->sizeUnit = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("audioFolder")) == 0) {
-        this->audioFolder = reinterpret_cast<const char*>(value);
+        this->audioFolder = fs::u8path(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("autosaveEnabled")) == 0) {
         this->autosaveEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("autosaveTimeout")) == 0) {
@@ -467,6 +491,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->snapGridSize = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("snapGridTolerance")) == 0) {
         this->snapGridTolerance = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("strokeRecognizerMinSize")) == 0) {
+        this->strokeRecognizerMinSize = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("touchDrawing")) == 0) {
         this->touchDrawing = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("gtkTouchInertialScrolling")) == 0) {
@@ -516,11 +542,27 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->trySelectOnStrokeFiltered = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.autoCheckDependencies")) == 0) {
         this->latexSettings.autoCheckDependencies = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.defaultText")) == 0) {
+        this->latexSettings.defaultText = reinterpret_cast<char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.globalTemplatePath")) == 0) {
         std::string v(reinterpret_cast<char*>(value));
         this->latexSettings.globalTemplatePath = fs::u8path(v);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.genCmd")) == 0) {
         this->latexSettings.genCmd = reinterpret_cast<char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.sourceViewThemeId")) == 0) {
+        this->latexSettings.sourceViewThemeId = reinterpret_cast<char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.editorFont")) == 0) {
+        this->latexSettings.editorFont = std::string{reinterpret_cast<char*>(value)};
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.useCustomEditorFont")) == 0) {
+        this->latexSettings.useCustomEditorFont = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.editorWordWrap")) == 0) {
+        this->latexSettings.editorWordWrap = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.sourceViewAutoIndent")) == 0) {
+        this->latexSettings.sourceViewAutoIndent = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.sourceViewSyntaxHighlight")) == 0) {
+        this->latexSettings.sourceViewSyntaxHighlight = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("latexSettings.sourceViewShowLineNumbers")) == 0) {
+        this->latexSettings.sourceViewShowLineNumbers = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("snapRecognizedShapesEnabled")) == 0) {
         this->snapRecognizedShapesEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("restoreLineWidthEnabled")) == 0) {
@@ -851,6 +893,7 @@ void Settings::save() {
     SAVE_BOOL_PROP(sidebarOnRight);
     SAVE_BOOL_PROP(scrollbarOnLeft);
     SAVE_BOOL_PROP(menubarVisible);
+    SAVE_BOOL_PROP(filepathShownInTitlebar);
     SAVE_INT_PROP(numColumns);
     SAVE_INT_PROP(numRows);
     SAVE_BOOL_PROP(viewFixedRows);
@@ -869,6 +912,9 @@ void Settings::save() {
 
     xmlNode = saveProperty("stylusCursorType", stylusCursorTypeToString(this->stylusCursorType), root);
     ATTACH_COMMENT("The cursor icon used with a stylus, allowed values are \"none\", \"dot\", \"big\", \"arrow\"");
+
+    xmlNode = saveProperty("iconTheme", iconThemeToString(this->iconTheme), root);
+    ATTACH_COMMENT("The icon theme, allowed values are \"iconsColor\", \"iconsLucide\"");
 
     SAVE_BOOL_PROP(highlightPosition);
     xmlNode = savePropertyUnsigned("cursorHighlightColor", uint32_t(cursorHighlightColor), root);
@@ -914,6 +960,8 @@ void Settings::save() {
     SAVE_DOUBLE_PROP(snapGridTolerance);
     SAVE_DOUBLE_PROP(snapGridSize);
 
+    SAVE_DOUBLE_PROP(strokeRecognizerMinSize);
+
     SAVE_BOOL_PROP(touchDrawing);
     SAVE_BOOL_PROP(gtkTouchInertialScrolling);
     SAVE_BOOL_PROP(pressureGuessing);
@@ -935,8 +983,10 @@ void Settings::save() {
     ATTACH_COMMENT("Config for new pages");
 
     SAVE_STRING_PROP(sizeUnit);
-
-    SAVE_STRING_PROP(audioFolder);
+    {
+        auto audioFolder = this->audioFolder.u8string();
+        SAVE_STRING_PROP(audioFolder);
+    }
     SAVE_INT_PROP(audioInputDevice);
     SAVE_INT_PROP(audioOutputDevice);
     SAVE_DOUBLE_PROP(audioSampleRate);
@@ -978,12 +1028,20 @@ void Settings::save() {
     /**/
 
     SAVE_BOOL_PROP(latexSettings.autoCheckDependencies);
+    SAVE_STRING_PROP(latexSettings.defaultText);
     // Inline SAVE_STRING_PROP(latexSettings.globalTemplatePath) since it
     // breaks on Windows due to the native character representation being
     // wchar_t instead of char
     fs::path& p = latexSettings.globalTemplatePath;
     xmlNode = saveProperty("latexSettings.globalTemplatePath", p.empty() ? "" : p.u8string().c_str(), root);
     SAVE_STRING_PROP(latexSettings.genCmd);
+    SAVE_STRING_PROP(latexSettings.sourceViewThemeId);
+    SAVE_FONT_PROP(latexSettings.editorFont);
+    SAVE_BOOL_PROP(latexSettings.useCustomEditorFont);
+    SAVE_BOOL_PROP(latexSettings.editorWordWrap);
+    SAVE_BOOL_PROP(latexSettings.sourceViewAutoIndent);
+    SAVE_BOOL_PROP(latexSettings.sourceViewSyntaxHighlight);
+    SAVE_BOOL_PROP(latexSettings.sourceViewShowLineNumbers);
 
     xmlNodePtr xmlFont = nullptr;
     xmlFont = xmlNewChild(root, nullptr, reinterpret_cast<const xmlChar*>("property"), nullptr);
@@ -998,7 +1056,9 @@ void Settings::save() {
     xmlSetProp(xmlFont, reinterpret_cast<const xmlChar*>("size"), reinterpret_cast<const xmlChar*>(sSize));
 
 
-    for (std::map<string, SElement>::value_type p: data) { saveData(root, p.first, p.second); }
+    for (std::map<string, SElement>::value_type p: data) {
+        saveData(root, p.first, p.second);
+    }
 
     xmlSaveFormatFileEnc(filepath.u8string().c_str(), doc, "UTF-8", 1);
     xmlFreeDoc(doc);
@@ -1060,7 +1120,9 @@ void Settings::saveData(xmlNodePtr root, const string& name, SElement& elem) {
         }
     }
 
-    for (std::map<string, SElement>::value_type p: elem.children()) { saveData(xmlNode, p.first, p.second); }
+    for (std::map<string, SElement>::value_type p: elem.children()) {
+        saveData(xmlNode, p.first, p.second);
+    }
 }
 
 // Getter- / Setter
@@ -1108,6 +1170,18 @@ void Settings::setMenubarVisible(bool visible) {
     }
 
     this->menubarVisible = visible;
+
+    save();
+}
+
+const bool Settings::isFilepathInTitlebarShown() const { return this->filepathShownInTitlebar; }
+
+void Settings::setFilepathInTitlebarShown(const bool shown) {
+    if (this->filepathShownInTitlebar == shown) {
+        return;
+    }
+
+    this->filepathShownInTitlebar = shown;
 
     save();
 }
@@ -1191,6 +1265,18 @@ void Settings::setStylusCursorType(StylusCursorType type) {
     }
 
     this->stylusCursorType = type;
+
+    save();
+}
+
+auto Settings::getIconTheme() const -> IconTheme { return this->iconTheme; }
+
+void Settings::setIconTheme(IconTheme iconTheme) {
+    if (this->iconTheme == iconTheme) {
+        return;
+    }
+
+    this->iconTheme = iconTheme;
 
     save();
 }
@@ -1285,6 +1371,16 @@ void Settings::setSnapGridSize(double gridSize) {
     this->snapGridSize = gridSize;
     save();
 }
+
+auto Settings::getStrokeRecognizerMinSize() const -> double { return this->strokeRecognizerMinSize; };
+void Settings::setStrokeRecognizerMinSize(double value) {
+    if (this->strokeRecognizerMinSize == value) {
+        return;
+    }
+
+    this->strokeRecognizerMinSize = value;
+    save();
+};
 
 auto Settings::getTouchDrawingEnabled() const -> bool { return this->touchDrawing; }
 
@@ -1394,14 +1490,14 @@ void Settings::setPageTemplate(const string& pageTemplate) {
     save();
 }
 
-auto Settings::getAudioFolder() const -> string const& { return this->audioFolder; }
+auto Settings::getAudioFolder() const -> fs::path const& { return this->audioFolder; }
 
-void Settings::setAudioFolder(const string& audioFolder) {
+void Settings::setAudioFolder(fs::path audioFolder) {
     if (this->audioFolder == audioFolder) {
         return;
     }
 
-    this->audioFolder = audioFolder;
+    this->audioFolder = std::move(audioFolder);
 
     save();
 }

@@ -11,20 +11,22 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <gtk/gtk.h>  // for GtkButton, GtkToggleButton
 
-#include "BackgroundSelectDialogBase.h"
-#include "BaseElementView.h"
+#include "BackgroundSelectDialogBase.h"  // for BackgroundSelectDialogBase
+
+class Document;
+class GladeSearchpath;
+class Settings;
 
 
 class PdfPagesDialog: public BackgroundSelectDialogBase {
 public:
     PdfPagesDialog(GladeSearchpath* gladeSearchPath, Document* doc, Settings* settings);
-    virtual ~PdfPagesDialog();
+    ~PdfPagesDialog() override;
 
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
     void updateOkButton();
     static double getZoom();
     int getSelectedPage();

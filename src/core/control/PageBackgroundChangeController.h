@@ -11,19 +11,20 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
 
-#include "control/pagetype/PageTypeMenu.h"
-#include "control/settings/PageTemplateSettings.h"
-#include "model/DocumentListener.h"
-#include "model/PageRef.h"
+#include <gtk/gtk.h>  // for GtkWidget
 
+#include "control/pagetype/PageTypeMenu.h"  // for ApplyPageTypeSource, Page...
+#include "model/DocumentChangeType.h"       // for DocumentChangeType
+#include "model/DocumentListener.h"         // for DocumentListener
+#include "model/PageRef.h"                  // for PageRef
 
-class PageTypeMenu;
 class Control;
-class XojPage;
 class UndoAction;
+class PageType;
+class PageTypeInfo;
 
 class PageBackgroundChangeController:
         public PageTypeMenuChangeListener,
@@ -31,27 +32,27 @@ class PageBackgroundChangeController:
         public PageTypeApplyListener {
 public:
     PageBackgroundChangeController(Control* control);
-    virtual ~PageBackgroundChangeController() = default;
+    ~PageBackgroundChangeController() override = default;
 
 public:
     virtual void changeCurrentPageBackground(PageType& pageType);
-    virtual void changeCurrentPageBackground(PageTypeInfo* info);
+    void changeCurrentPageBackground(PageTypeInfo* info) override;
     void changeAllPagesBackground(const PageType& pt);
     void insertNewPage(size_t position);
     GtkWidget* getMenu();
 
     // DocumentListener
 public:
-    virtual void documentChanged(DocumentChangeType type);
-    virtual void pageSizeChanged(size_t page);
-    virtual void pageChanged(size_t page);
-    virtual void pageInserted(size_t page);
-    virtual void pageDeleted(size_t page);
-    virtual void pageSelected(size_t page);
+    void documentChanged(DocumentChangeType type) override;
+    void pageSizeChanged(size_t page) override;
+    void pageChanged(size_t page) override;
+    void pageInserted(size_t page) override;
+    void pageDeleted(size_t page) override;
+    void pageSelected(size_t page) override;
 
     // PageTypeApplyListener
 public:
-    virtual void applySelectedPageBackground(bool allPages, ApplyPageTypeSource src);
+    void applySelectedPageBackground(bool allPages, ApplyPageTypeSource src) override;
 
 private:
     /**

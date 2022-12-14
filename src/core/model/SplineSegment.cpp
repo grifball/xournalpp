@@ -1,7 +1,10 @@
 #include "SplineSegment.h"
 
+#include <cmath>     // for abs
+#include <iterator>  // for end
+
 SplineSegment::SplineSegment(const Point& p, const Point& q):
-        firstKnot(p), firstControlPoint(p), secondKnot(q), secondControlPoint(q) {}
+        firstKnot(p), secondKnot(q), firstControlPoint(p), secondControlPoint(q) {}
 
 SplineSegment::SplineSegment(const Point& p, const Point& fp, const Point& sp, const Point& q) {
     firstKnot = p;

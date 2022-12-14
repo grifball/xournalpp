@@ -11,26 +11,22 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include <poppler.h>
+#include <poppler.h>  // for PopplerAction, PopplerDocument
 
-#include "model/LinkDestination.h"
-#include "pdf/base/XojPdfAction.h"
-
-
-class LinkDestination;
+#include "model/LinkDestination.h"  // for LinkDestination (ptr only), XojLi...
+#include "pdf/base/XojPdfAction.h"  // for XojPdfAction
 
 
 class PopplerGlibAction: public XojPdfAction {
 public:
     PopplerGlibAction(PopplerAction* action, PopplerDocument* document);
-    virtual ~PopplerGlibAction();
+    ~PopplerGlibAction() override;
 
 public:
-    virtual XojLinkDest* getDestination();
-    virtual std::string getTitle();
+    XojLinkDest* getDestination() override;
+    std::string getTitle() override;
 
 private:
     void linkFromDest(LinkDestination* link, PopplerDest* pDest);

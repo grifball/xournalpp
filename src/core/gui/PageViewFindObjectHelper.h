@@ -16,7 +16,8 @@
 #include <limits>
 #include <optional>
 
-#include "audio/AudioPlayer.h"
+#include "control/AudioController.h"
+#include "control/tools/EditSelection.h"
 #include "util/PathUtil.h"
 
 #include "XournalView.h"
@@ -130,7 +131,7 @@ public:
 
     struct Status {
         bool success;
-        std::string filename;
+        fs::path filename;
     };
 
     std::optional<Status> playbackStatus;
@@ -149,20 +150,15 @@ protected:
         if ((s->intersects(x, y, 15, &tmpGap))) {
             size_t ts = s->getTimestamp();
 
-            std::string fn = s->getAudioFilename();
-
-            if (!fn.empty()) {
-                if (fn.rfind(G_DIR_SEPARATOR, 0) != 0) {
-                    auto path = Util::fromUri(view->settings->getAudioFolder());
-
+            if (auto fn = s->getAudioFilename(); !fn.empty()) {
+                if (!fn.has_parent_path() || fs::weakly_canonical(fn.parent_path()) == "/") {
+                    auto const& path = view->settings->getAudioFolder();
                     // Assume path exists
-                    *path /= fn;
-
-                    fn = path->string();
+                    fn = path / fn;
                 }
                 auto* ac = view->getXournal()->getControl()->getAudioController();
                 bool success = ac->startPlayback(fn, (unsigned int)ts);
-                playbackStatus = {success, fn};
+                playbackStatus = {success, std::move(fn)};
                 return success;
             }
         }

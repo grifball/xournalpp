@@ -10,6 +10,7 @@
  */
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 
 #include <config-test.h>
@@ -17,6 +18,10 @@
 
 #include "control/xojfile/LoadHandler.h"
 #include "control/xojfile/SaveHandler.h"
+#include "model/Image.h"
+#include "model/Stroke.h"
+#include "model/Text.h"
+#include "model/XojPage.h"
 #include "util/PathUtil.h"
 
 #include "filesystem.h"
@@ -24,7 +29,13 @@
 using std::string;
 
 // Common test Functions
-void testLoadStoreLoad() {
+
+/**
+ * Unit test implementation for the "suite.xopp" file and its derivatives.
+ * \param filepath The path to the actual file to load.
+ * \param tol The absolute tolerance used when checking stroke coordinate data.
+ */
+void testLoadStoreLoadHelper(const fs::path& filepath, double tol = 1e-8) {
     auto getElements = [](Document* doc) {
         EXPECT_EQ((size_t)1, doc->getPageCount());
         PageRef page = doc->getPage(0);
@@ -62,7 +73,7 @@ void testLoadStoreLoad() {
         return elements;
     };
     LoadHandler handler;
-    Document* doc1 = handler.loadDocument(GET_TESTFILE("packaged_xopp/suite.xopp"));
+    Document* doc1 = handler.loadDocument(filepath);
     auto elements1 = getElements(doc1);
 
     SaveHandler h;
@@ -76,7 +87,7 @@ void testLoadStoreLoad() {
     auto elements2 = getElements(doc2);
 
     // Check that the coordinates from both files don't differ more than the precision they were saved with
-    auto coordEq = [](double a, double b) { return std::abs(a - b) <= 1e-8; };
+    auto coordEq = [tol](double a, double b) { return std::abs(a - b) <= tol; };
 
     for (unsigned long i = 0; i < elements1.size(); i++) {
         Element* a = elements1.at(i);
@@ -242,6 +253,15 @@ TEST(ControlLoadHandler, testPageTypeZipped) {
     checkPageType(doc, 5, "p6", PageType(PageTypeFormat::Image));
 }
 
+TEST(ControlLoadHandler, testPageTypeFormatCopyFix) {
+    LoadHandler handler;
+    Document* doc = handler.loadDocument(GET_TESTFILE("pageTypeFormatCopy.xopp"));
+
+    EXPECT_EQ((size_t)3, doc->getPageCount());
+    checkPageType(doc, 0, "p1", PageType(PageTypeFormat::Lined));
+    checkPageType(doc, 1, "p2", PageType(PageTypeFormat::Plain));  // PageTypeFormat::Copy in the file
+    checkPageType(doc, 2, "p3", PageType(PageTypeFormat::Plain));  // PageTypeFormat::Plain in the file
+}
 
 TEST(ControlLoadHandler, testLayer) {
     LoadHandler handler;
@@ -325,7 +345,85 @@ TEST(ControlLoadHandler, testTextZipped) {
     EXPECT_EQ(Color(0x00f000U), t3->getColor());
 }
 
-TEST(ControlLoadHandler, testLoadStoreLoadDefault) { testLoadStoreLoad(); }
+TEST(ControlLoadHandler, testImageZipped) {
+    LoadHandler handler;
+    Document* doc = handler.loadDocument(GET_TESTFILE("packaged_xopp/imgAttachment/new.xopp"));
+
+    EXPECT_EQ(1U, doc->getPageCount());
+    PageRef page = doc->getPage(0);
+    EXPECT_EQ(1U, page->getLayerCount());
+    Layer* layer = (*page->getLayers())[0];
+    EXPECT_EQ(layer->getElements().size(), 1);
+
+    Image* img = dynamic_cast<Image*>(layer->getElements()[0]);
+    EXPECT_TRUE(img);
+}
+
+namespace {
+void checkImageFormat(Image* img, const char* formatName) {
+    GdkPixbufLoader* imgLoader = gdk_pixbuf_loader_new();
+    ASSERT_TRUE(gdk_pixbuf_loader_write(imgLoader, img->getRawData(), img->getRawDataLength(), nullptr));
+    ASSERT_TRUE(gdk_pixbuf_loader_close(imgLoader, nullptr));
+    GdkPixbufFormat* format = gdk_pixbuf_loader_get_format(imgLoader);
+    ASSERT_TRUE(format) << "could not determine image format";
+    EXPECT_STREQ(gdk_pixbuf_format_get_name(format), formatName);
+}
+}  // namespace
+
+TEST(ControlLoadHandler, imageLoadJpeg) {
+    // check loading of arbitrary image format (up to whatever is supported by GdkPixbuf)
+    LoadHandler handler;
+    Document* doc = handler.loadDocument(GET_TESTFILE("packaged_xopp/imgAttachment/doc_with_jpg.xopp"));
+    ASSERT_TRUE(doc) << "doc should not be null";
+    ASSERT_EQ(1U, doc->getPageCount());
+    PageRef page = doc->getPage(0);
+    ASSERT_EQ(1U, page->getLayerCount());
+    Layer* layer = (*page->getLayers())[0];
+    ASSERT_EQ(layer->getElements().size(), 1);
+
+    Image* img = dynamic_cast<Image*>(layer->getElements()[0]);
+    ASSERT_TRUE(img) << "element should be an image";
+
+    checkImageFormat(img, "jpeg");
+}
+
+// FIXME: create a SaveHandlerTest.cpp and move this test here
+TEST(ControlLoadHandler, imageSaveJpegBackwardCompat) {
+    // File format version <= 4 requires images to be encoded as PNG in base64, but the version has not been bumped yet.
+    // For backward compatibility, check that loaded JPEG images are saved in PNG format.
+
+    // FIXME: use a path in CMAKE_BINARY_DIR or CMAKE_CURRENT_BINARY_DIR
+    const fs::path outPath = fs::temp_directory_path() / "xournalpp-test-units_ControlLoaderHandler_imageLoadJpeg.xopp";
+
+    // save journal containing JPEG image
+    {
+        LoadHandler handler;
+        Document* doc = handler.loadDocument(GET_TESTFILE("packaged_xopp/imgAttachment/doc_with_jpg.xopp"));
+        ASSERT_TRUE(doc) << "doc with jpeg should not be null";
+
+        SaveHandler saver;
+        saver.prepareSave(doc);
+        saver.saveTo(outPath);
+    }
+
+    // check that the image is saved as PNG
+    LoadHandler handler;
+    Document* doc = handler.loadDocument(outPath);
+    ASSERT_TRUE(doc) << "saved doc should not be null";
+    ASSERT_EQ(1U, doc->getPageCount());
+    PageRef page = doc->getPage(0);
+    ASSERT_EQ(1U, page->getLayerCount());
+    Layer* layer = (*page->getLayers())[0];
+    ASSERT_EQ(layer->getElements().size(), 1);
+
+    Image* img = dynamic_cast<Image*>(layer->getElements()[0]);
+    ASSERT_TRUE(img) << "element should be an image";
+    checkImageFormat(img, "png");
+}
+
+TEST(ControlLoadHandler, testLoadStoreLoadDefault) {
+    testLoadStoreLoadHelper(GET_TESTFILE("packaged_xopp/suite.xopp"), /*tol=*/1e-8);
+}
 
 
 #ifdef __linux__
@@ -344,7 +442,67 @@ TEST(ControlLoadHandler, testLoadStoreLoadGerman) {
                       << std::endl;
         }
     }
-    testLoadStoreLoad();
+    testLoadStoreLoadHelper(GET_TESTFILE("packaged_xopp/suite.xopp"), /*tol=*/1e-8);
     setlocale(LC_ALL, "C");
 }
 #endif
+
+// Backwards compatibility test that checks that full-precision float strings can be loaded.
+// See https://github.com/xournalpp/xournalpp/pull/4065
+TEST(ControlLoadHandler, testLoadStoreLoadFloatBwCompat) {
+    testLoadStoreLoadHelper(GET_TESTFILE("packaged_xopp/suite_float_bw_compat.xopp"), /*tol=*/1e-5);
+}
+
+TEST(ControlLoadHandler, testStrokeWidthRecovery) {
+    LoadHandler handler;
+    Document* doc = handler.loadDocument(GET_TESTFILE("packaged_xopp/stroke/width_recovery.xopp"));
+
+    EXPECT_EQ((size_t)1, doc->getPageCount());
+    PageRef page = doc->getPage(0);
+
+    EXPECT_EQ((size_t)1, page->getLayerCount());
+
+    Layer* layer = (*(page->getLayers()))[0];
+
+    EXPECT_EQ(9U, layer->getElements().size());
+
+    Stroke* s1 = (Stroke*)layer->getElements()[0];
+    EXPECT_EQ(ELEMENT_STROKE, s1->getType());
+    for (auto& p: s1->getPointVector()) {
+        EXPECT_EQ(p.z, Point::NO_PRESSURE);
+    }
+
+    auto testPressureValues = [&elts = layer->getElements()](size_t n, const std::vector<double>& pressures) {
+        Stroke* s = (Stroke*)elts[n];
+        printf("Testing stroke %zu\n", n);
+        EXPECT_EQ(ELEMENT_STROKE, s->getType());
+        EXPECT_EQ(Color(0x0000ff00), s->getColor());
+        EXPECT_EQ(1.41, s->getWidth());
+        auto pts = s->getPointVector();
+        EXPECT_EQ(pts.size(), pressures.size());
+        EXPECT_EQ(std::mismatch(pressures.begin(), pressures.end(), pts.begin(),
+                                [](double v, const Point& p) { return v == p.z; })
+                          .first,
+                  pressures.end());
+    };
+
+    // This stroke got its last point removed and a negative pressure value got straightened up
+    testPressureValues(1, {0.16, 0.16, 0.20, 0.22, 0.26, 0.14, Point::NO_PRESSURE});
+
+    // The stroke is split in 4 bits due to null pressure values at various places
+    testPressureValues(2, {0.16, Point::NO_PRESSURE});
+
+    testPressureValues(3, {0.28, 0.30, 0.34, 0.22, 0.18, Point::NO_PRESSURE});
+
+    testPressureValues(4, {0.16, 0.16, 0.22, 0.28, 0.30, Point::NO_PRESSURE});
+
+    testPressureValues(5, {0.30, 0.34, 0.34, 0.38, 0.40, 0.40, 0.42, 0.46, 0.46, 0.46, 0.50, 0.52, Point::NO_PRESSURE});
+
+    testPressureValues(
+            6, {0.56, 0.56, 0.58, 0.60, 0.56, 0.40, 0.32, 0.18, 0.12, 0.16, 0.16, 0.20, 0.22, Point::NO_PRESSURE});
+
+    // The stroke is split in 2 bits due to "nan" pressure values at various places
+    testPressureValues(7, {0.20, 0.30, 0.10, Point::NO_PRESSURE});
+
+    testPressureValues(8, {0.25, 0.30, 0.40, Point::NO_PRESSURE});
+}

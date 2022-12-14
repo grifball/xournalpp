@@ -11,51 +11,58 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <vector>  // for vector
 
-#include "gui/Redrawable.h"
-#include "model/Element.h"
-#include "model/PageRef.h"
-#include "util/Util.h"
+#include "model/Element.h"  // for Element (ptr only), ShapeContainer
+#include "model/OverlayBase.h"
+#include "model/PageRef.h"  // for PageRef
+#include "util/DispatchPool.h"
+#include "util/Point.h"
+#include "util/Range.h"
+#include "view/overlays/SelectionView.h"
 
-
-class Selection: public ShapeContainer {
+class Selection: public ShapeContainer, public OverlayBase {
 public:
-    Selection(Redrawable* view);
-    virtual ~Selection();
+    Selection();
+    ~Selection() override;
+
+    using BoundaryPoint = utl::Point<double>;
 
 public:
     virtual bool finalize(PageRef page) = 0;
-    virtual void paint(cairo_t* cr, GdkRectangle* rect, double zoom) = 0;
     virtual void currentPos(double x, double y) = 0;
-    virtual bool userTapped(double zoom) = 0;
+    virtual bool userTapped(double zoom) const = 0;
+    virtual const std::vector<BoundaryPoint>& getBoundary() const = 0;
+
+    inline const std::shared_ptr<xoj::util::DispatchPool<xoj::view::SelectionView>>& getViewPool() const {
+        return viewPool;
+    }
 
 private:
 protected:
+    std::vector<BoundaryPoint> boundaryPoints;
+
     std::vector<Element*> selectedElements;
     PageRef page;
-    Redrawable* view;
 
-    double x1Box;
-    double x2Box;
-    double y1Box;
-    double y2Box;
+    Range bbox;
+
+    std::shared_ptr<xoj::util::DispatchPool<xoj::view::SelectionView>> viewPool;
 
     friend class EditSelection;
 };
 
 class RectSelection: public Selection {
 public:
-    RectSelection(double x, double y, Redrawable* view);
-    virtual ~RectSelection();
+    RectSelection(double x, double y);
+    ~RectSelection() override;
 
 public:
-    virtual bool finalize(PageRef page);
-    virtual void paint(cairo_t* cr, GdkRectangle* rect, double zoom);
-    virtual void currentPos(double x, double y);
-    virtual bool contains(double x, double y);
-    virtual bool userTapped(double zoom);
+    bool finalize(PageRef page) override;
+    void currentPos(double x, double y) override;
+    bool contains(double x, double y) const override;
+    bool userTapped(double zoom) const override;
+    const std::vector<BoundaryPoint>& getBoundary() const override;
 
 private:
     double sx;
@@ -63,29 +70,16 @@ private:
     double ex;
     double ey;
     double maxDist = 0;
-
-    /**
-     * In zoom coordinates
-     */
-    double x1;
-    double x2;
-    double y1;
-    double y2;
 };
-
-class RegionPoint;
 
 class RegionSelect: public Selection {
 public:
-    RegionSelect(double x, double y, Redrawable* view);
+    RegionSelect(double x, double y);
 
 public:
     bool finalize(PageRef page) override;
-    void paint(cairo_t* cr, GdkRectangle* rect, double zoom) override;
     void currentPos(double x, double y) override;
-    bool contains(double x, double y) override;
-    bool userTapped(double zoom) override;
-
-private:
-    std::vector<RegionPoint> points;
+    bool contains(double x, double y) const override;
+    bool userTapped(double zoom) const override;
+    const std::vector<BoundaryPoint>& getBoundary() const override;
 };

@@ -1,10 +1,12 @@
-cmake_minimum_required(VERSION 3.12...${CMAKE_VERSION})
+cmake_minimum_required(VERSION 3.12)
 cmake_policy(VERSION ${CMAKE_VERSION})
+## The CMAKE_OSX_DEPLOYMENT_TARGET must be set before project(), so don't move the following line further down.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version" FORCE)
 
 ## Project related Variables
 ## Also update changelog in debian folder!
 project(xournalpp
-        VERSION 1.1.0
+        VERSION 1.1.3
         DESCRIPTION "Xournal++ - Open source hand note-taking program"
         HOMEPAGE_URL "https://xournalpp.github.io/"
         LANGUAGES CXX C)
@@ -25,6 +27,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # enable clang tidy to use correct include
 set_directory_properties(PROPERTIES EP_BASE "${PROJECT_BINARY_DIR}/external")
 
 add_definitions(-D_USE_MATH_DEFINES)
+add_definitions(-DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED)
 
 # package version
 include(Version)
@@ -90,20 +93,37 @@ list(APPEND pkg-module-spec "libzip >= 1.0.1")
 list(APPEND pkg-module-spec "portaudiocpp >= 12")
 list(APPEND pkg-module-spec "sndfile >= 1.0.25")
 list(APPEND pkg-module-spec "librsvg-2.0 >= 2.40")
+
+pkg_check_modules(GtkSourceView IMPORTED_TARGET "gtksourceview-4 >= 4.0.0")
+
+# Profiling
+option (ENABLE_PROFILING "Link with gperftools" OFF)
+if (ENABLE_PROFILING)
+  list(APPEND pkg-module-spec "libprofiler >= 2.5")
+  list(APPEND pkg-module-spec "libtcmalloc >= 2.5")
+endif (ENABLE_PROFILING)
+
 pkg_check_modules(ExternalModules REQUIRED IMPORTED_TARGET ${pkg-module-spec})
 
 if (#[[${CMAKE_VERSION} VERSION_LESS "3.18" AND]] ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     # bugfix for old pkg_config versions
     get_target_property(libs PkgConfig::ExternalModules INTERFACE_LINK_LIBRARIES)
-    message(STATUS "PkgConfig::ExternalModules::INTERFACE_LINK_LIBRARIES: ${libs}")
+    # message(STATUS "PkgConfig::ExternalModules::INTERFACE_LINK_LIBRARIES: ${libs}")
     string(REPLACE "-framework;" "-framework " libs "${libs}")
-    message(STATUS "PkgConfig::ExternalModules::INTERFACE_LINK_LIBRARIES fixed: ${libs}")
+    # message(STATUS "PkgConfig::ExternalModules::INTERFACE_LINK_LIBRARIES fixed: ${libs}")
     set_target_properties(PkgConfig::ExternalModules PROPERTIES INTERFACE_LINK_LIBRARIES "${libs}")
+
+
+    if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.13")
+        # fix broken framework flags from pkgconfig
+        get_target_property(opts PkgConfig::ExternalModules INTERFACE_LINK_OPTIONS)
+        string(REPLACE "-framework;" "SHELL:-framework " opts "${opts}")
+        set_target_properties(PkgConfig::ExternalModules PROPERTIES INTERFACE_LINK_OPTIONS "${opts}")
+    endif ()
 endif ()
 
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
-find_package(X11)
 find_package(Lua 5.3) # Lua 5.4 is only supported with cmake >=3.18
 if (Lua_FOUND)
     # currently not fully supported by cmake
@@ -115,19 +135,51 @@ if (Lua_FOUND)
     add_library(Lua::lua ALIAS lua)
 endif ()
 
+if (GtkSourceView_FOUND)
+    message("Enable GtkSourceView TeX syntax highlighting")
+    add_compile_definitions(USE_GTK_SOURCEVIEW)
+endif ()
+
+# X11 link settings
+
+# Note: CMAKE_REQUIRED_FIND_PACKAGE is only supported by CMake >= 3.22
+option(CMAKE_REQUIRED_FIND_PACKAGE_X11 "Force linking with X11" OFF)
+# Disable X11 on Windows/MacOS by default
+if (NOT CMAKE_REQUIRED_FIND_PACKAGE_X11 AND (CMAKE_SYSTEM_NAME MATCHES "Windows|Darwin"))
+    set(_DISABLE_X11_default ON)
+else()
+    set(_DISABLE_X11_default OFF)
+endif()
+option(CMAKE_DISABLE_FIND_PACKAGE_X11 "Disable linking with X11" ${_DISABLE_X11_default})
+unset(_DISABLE_X11_default)
+
+# To configure X11 linking, set the following definitions:
+#   CMAKE_DISABLE_FIND_PACKAGE_X11 - turn on to disable X11 features
+#   CMAKE_REQUIRED_FIND_PACKAGE_X11 - turn on to force use of X11 features
+
+# backwards compatibility for CMAKE_REQUIRED_FIND_PACKAGE_*
+if (CMAKE_REQUIRED_FIND_PACKAGE_X11)
+    find_package(X11 REQUIRED COMPONENTS Xi Xext)
+else()
+    find_package(X11 COMPONENTS Xi Xext)
+endif ()
+
 add_library(external_modules INTERFACE)
 target_link_libraries(external_modules INTERFACE
         PkgConfig::ExternalModules
         $<$<TARGET_EXISTS:Lua::lua>:Lua::lua>
+        $<$<TARGET_EXISTS:PkgConfig::GtkSourceView>:PkgConfig::GtkSourceView>
         $<$<TARGET_EXISTS:X11::Xi>:X11::Xi>
         $<$<TARGET_EXISTS:X11::X11>:X11::X11>
         $<$<TARGET_EXISTS:Backtrace::backtrace>:Backtrace::backtrace>
         ZLIB::ZLIB
         Threads::Threads
         )
+
 target_compile_definitions(external_modules INTERFACE
         GLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_32
         GDK_VERSION_MIN_REQUIRED=GDK_VERSION_3_18
+        $<$<TARGET_EXISTS:X11::X11>:X11_ENABLED>
         )
 target_link_options(external_modules INTERFACE
         $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:GNU>>>:-rdynamic>
@@ -206,6 +258,12 @@ configure_file(
 )
 
 configure_file(
+        src/config-git.h.in
+        src/config-git.h
+        ESCAPE_QUOTES @ONLY
+)
+
+configure_file(
         src/config-paths.h.in
         src/config-paths.h
         ESCAPE_QUOTES @ONLY
@@ -269,12 +327,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             DESTINATION share/mime/packages)
     install(FILES desktop/com.github.xournalpp.xournalpp.desktop
             DESTINATION share/applications)
-    install(FILES desktop/x-xojpp.desktop
-            DESTINATION share/mimelnk/application)
-    install(FILES desktop/x-xopp.desktop
-            DESTINATION share/mimelnk/application)
-    install(FILES desktop/x-xopt.desktop
-            DESTINATION share/mimelnk/application)
     install(FILES desktop/com.github.xournalpp.xournalpp.thumbnailer
             DESTINATION share/thumbnailers)
     install(FILES desktop/com.github.xournalpp.xournalpp.appdata.xml
@@ -297,9 +349,11 @@ add_custom_target(uninstall
 message("
 Configuration:
     Compiler:                   ${CMAKE_CXX_COMPILER}
+    X11 support enabled:        ${X11_FOUND}
     GTEST enabled:              ${ENABLE_GTEST}
     GCOV enabled:               ${DEV_ENABLE_GCOV}
     Filesystem library:         ${CXX_FILESYSTEM_NAMESPACE}
+    Profiling enabled:          ${ENABLE_PROFILING}
 ")
 
 option(CMAKE_DEBUG_INCLUDES_LDFLAGS "List include dirs and ldflags for xournalpp target" OFF)

@@ -4,13 +4,25 @@
 
 #include "TouchDrawingInputHandler.h"
 
-#include "control/DeviceListHelper.h"
-#include "gui/XournalppCursor.h"
-#include "gui/widgets/XournalWidget.h"
-#include "model/Stroke.h"
+#include <string>  // for operator==, basic_string
 
-#include "InputContext.h"
-#include "InputUtils.h"
+#include "control/Control.h"                   // for Control
+#include "control/DeviceListHelper.h"          // for getSourceMapping
+#include "control/ToolEnums.h"                 // for TOOL_HAND, ToolType
+#include "control/ToolHandler.h"               // for ToolHandler
+#include "control/settings/ButtonConfig.h"     // for ButtonConfig
+#include "control/settings/Settings.h"         // for Settings
+#include "control/settings/SettingsEnums.h"    // for BUTTON_TOUCH, Button
+#include "gui/MainWindow.h"                    // for MainWindow
+#include "gui/PageView.h"                      // for XojPageView
+#include "gui/XournalView.h"                   // for XournalView
+#include "gui/XournalppCursor.h"               // for XournalppCursor
+#include "gui/inputdevices/InputEvents.h"      // for InputEvent, BUTTON_PRE...
+#include "gui/inputdevices/PenInputHandler.h"  // for PenInputHandler
+#include "gui/widgets/XournalWidget.h"         // for GtkXournal
+
+#include "InputContext.h"  // for InputContext
+#include "InputUtils.h"    // for InputUtils
 
 TouchDrawingInputHandler::TouchDrawingInputHandler(InputContext* inputContext): PenInputHandler(inputContext) {
     inputContext->getToolHandler()->addToolChangedListener([&](ToolType newToolType) {
@@ -32,7 +44,7 @@ auto TouchDrawingInputHandler::handleImpl(InputEvent const& event) -> bool {
 
     // Do we need to end the touch sequence?
     bool mustEnd = event.type == BUTTON_RELEASE_EVENT;
-    mustEnd = mustEnd || event.type == GRAB_BROKEN_EVENT && this->deviceClassPressed;
+    mustEnd = mustEnd || (event.type == GRAB_BROKEN_EVENT && this->deviceClassPressed);
 
     // Notify if finger enters/leaves widget
     // Note: Drawing outside window doesn't seem to work
@@ -48,7 +60,7 @@ auto TouchDrawingInputHandler::handleImpl(InputEvent const& event) -> bool {
     }
 
     // Multitouch
-    if (this->primarySequence && this->primarySequence != event.sequence || this->secondarySequence) {
+    if ((this->primarySequence && this->primarySequence != event.sequence) || this->secondarySequence) {
         if (!this->secondarySequence) {
             this->secondarySequence = event.sequence;
 
@@ -59,7 +71,7 @@ auto TouchDrawingInputHandler::handleImpl(InputEvent const& event) -> bool {
             XojPageView* currentPage = this->getPageAtCurrentPosition(event);
 
             if (currentPage) {
-                currentPage->onMotionCancelEvent();
+                currentPage->onSequenceCancelEvent();
             }
         }
 

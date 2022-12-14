@@ -11,23 +11,20 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <string>   // for string
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkToolItem
 
-#include "gui/sidebar/previews/base/SidebarToolbar.h"
-#include "model/DocumentChangeType.h"
-#include "model/DocumentListener.h"
-
+#include "gui/sidebar/previews/base/SidebarToolbar.h"  // for SidebarToolbar...
+#include "model/DocumentListener.h"                    // for DocumentListener
 
 class Control;
-class SidebarToolbar;
 
 class AbstractSidebarPage: public DocumentListener, public SidebarToolbarActionListener {
 public:
     AbstractSidebarPage(Control* control, SidebarToolbar* toolbar);
-    virtual ~AbstractSidebarPage();
+    ~AbstractSidebarPage() override;
 
 public:
     virtual void enableSidebar() = 0;

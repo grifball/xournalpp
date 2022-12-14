@@ -1,15 +1,15 @@
 #include "MoveLayerUndoAction.h"
 
-#include "control/Control.h"
-#include "control/layer/LayerController.h"
-#include "gui/XournalView.h"
-#include "model/Document.h"
-#include "model/Layer.h"
-#include "model/PageRef.h"
-#include "util/i18n.h"
+#include "control/layer/LayerController.h"  // for LayerController
+#include "model/Layer.h"                    // for Layer, Layer::Index
+#include "model/PageRef.h"                  // for PageRef
+#include "undo/UndoAction.h"                // for UndoAction
+#include "util/i18n.h"                      // for _
+
+class Control;
 
 MoveLayerUndoAction::MoveLayerUndoAction(LayerController* layerController, const PageRef& page, Layer* layer,
-                                         int oldLayerPos, int newLayerPos):
+                                         Layer::Index oldLayerPos, Layer::Index newLayerPos):
         UndoAction("MoveLayerUndoAction"),
         oldLayerPos(oldLayerPos),
         newLayerPos(newLayerPos),

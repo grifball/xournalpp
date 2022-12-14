@@ -11,35 +11,33 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
+#include <string>   // for string, allocator
+#include <vector>   // for vector
 
-#include "control/jobs/ProgressListener.h"
-#include "control/jobs/XournalScheduler.h"
-#include "control/settings/MetadataManager.h"
-#include "control/settings/Settings.h"
-#include "control/zoom/ZoomControl.h"
-#include "gui/MainWindow.h"
-#include "gui/SearchBar.h"
-#include "gui/dialog/LatexDialog.h"
-#include "gui/sidebar/Sidebar.h"
-#include "model/Document.h"
-#include "undo/UndoRedoHandler.h"
-#include "util/PathUtil.h"
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gio/gio.h>                // for GApplication
+#include <glib.h>                   // for guint
+#include <gtk/gtk.h>                // for GtkLabel
 
-#include "Actions.h"
-#include "AudioController.h"
-#include "ClipboardHandler.h"
-#include "RecentManager.h"
-#include "ScrollHandler.h"
-#include "ToolHandler.h"
+#include "control/ToolEnums.h"              // for ToolSize, ToolType
+#include "control/jobs/ProgressListener.h"  // for ProgressListener
+#include "enums/ActionGroup.enum.h"         // for ActionGroup
+#include "enums/ActionType.enum.h"          // for ActionType
+#include "model/DocumentHandler.h"          // for DocumentHandler
+#include "model/PageRef.h"                  // for PageRef
+#include "undo/UndoRedoHandler.h"           // for UndoRedoHandler (ptr only)
 
+#include "Actions.h"           // for ActionHandler
+#include "ClipboardHandler.h"  // for ClipboardListener
+#include "RecentManager.h"     // for RecentManagerListener
+#include "ToolHandler.h"       // for ToolListener
+#include "filesystem.h"        // for path
 
 class AudioController;
 class FullscreenHandler;
 class Sidebar;
-class XojPageView;
-class SaveHandler;
 class GladeSearchpath;
 class MetadataManager;
 class XournalppCursor;
@@ -52,6 +50,17 @@ class PageTypeMenu;
 class BaseExportJob;
 class LayerController;
 class PluginController;
+class Document;
+class EditSelection;
+class Element;
+class MainWindow;
+class ObjectInputStream;
+class ScrollHandler;
+class SearchBar;
+class Settings;
+class TextEditor;
+class XournalScheduler;
+class ZoomControl;
 
 class Control:
         public ActionHandler,
@@ -63,7 +72,11 @@ class Control:
         public ProgressListener {
 public:
     Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath);
-    virtual ~Control();
+    Control(Control const&) = delete;
+    Control(Control&&) = delete;
+    auto operator=(Control const&) -> Control& = delete;
+    auto operator=(Control&&) -> Control& = delete;
+    ~Control() override;
 
     void initWindow(MainWindow* win);
 
@@ -113,31 +126,30 @@ public:
     // Menu Help
     void showAbout();
 
-    virtual void actionPerformed(ActionType type, ActionGroup group, GdkEvent* event, GtkMenuItem* menuitem,
-                                 GtkToolButton* toolbutton, bool enabled);
+    void actionPerformed(ActionType type, ActionGroup group, GtkToolButton* toolbutton, bool enabled) override;
 
     /**
      * @brief Update the Cursor and the Toolbar based on the active color
      *
      */
-    virtual void toolColorChanged();
+    void toolColorChanged() override;
     /**
      * @brief Change the color of the current selection based on the active Tool
      *
      */
-    virtual void changeColorOfSelection();
-    virtual void setCustomColorSelected();
-    virtual void toolChanged();
-    virtual void toolSizeChanged();
-    virtual void toolFillChanged();
-    virtual void toolLineStyleChanged();
+    void changeColorOfSelection() override;
+    void setCustomColorSelected() override;
+    void toolChanged() override;
+    void toolSizeChanged() override;
+    void toolFillChanged() override;
+    void toolLineStyleChanged() override;
 
     void selectTool(ToolType type);
     void selectDefaultTool();
 
     void updatePageNumbers(size_t page, size_t pdfPage);
 
-    virtual void fileOpened(fs::path const& path);
+    void fileOpened(fs::path const& path) override;
 
     /**
      * Save current state (selected tool etc.)
@@ -173,7 +185,14 @@ public:
 
     bool isFullscreen();
 
-    bool searchTextOnPage(std::string text, int p, int* occures, double* top);
+    /**
+     * @brief Search text on the given page. The matches (if any) are stored in the XojPageView::SearchControl instance.
+     * @param occurrences If not nullptr, the pointed variable will contain the number of matches on the page
+     * @param yOfUpperMostMatch If not nullptr, will contain the y coordinate of the first match on the page
+     *                          (Used for scrolling to the first match)
+     * @return true if at least one match was found
+     */
+    bool searchTextOnPage(const std::string& text, size_t pageNumber, size_t* occurrences, double* yOfUpperMostMatch);
 
     /**
      * Fire page selected, but first check if the page Number is valid
@@ -184,6 +203,7 @@ public:
     void firePageSelected(size_t page);
 
     void addDefaultPage(std::string pageTemplate);
+    void duplicatePage();
     void insertNewPage(size_t position);
     void appendNewPdfPages();
     void insertPage(const PageRef& page, size_t position);
@@ -198,11 +218,15 @@ public:
     // selection handling
     void clearSelection();
 
-    void setCopyPasteEnabled(bool enabled);
+    void moveSelectionToLayer(size_t layerNo);
+
+    void setCopyCutEnabled(bool enabled);
 
     void enableAutosave(bool enable);
 
     void clearSelectionEndText();
+
+    void selectAllOnPage();
 
     void reorderSelection(ActionType type);
 
@@ -267,22 +291,22 @@ public:
 
 public:
     // UndoRedoListener interface
-    void undoRedoChanged();
-    void undoRedoPageChanged(PageRef page);
+    void undoRedoChanged() override;
+    void undoRedoPageChanged(PageRef page) override;
 
 public:
     // ProgressListener interface
-    void setMaximumState(int max);
-    void setCurrentState(int state);
+    void setMaximumState(int max) override;
+    void setCurrentState(int state) override;
 
 public:
     // ClipboardListener interface
-    virtual void clipboardCutCopyEnabled(bool enabled);
-    virtual void clipboardPasteEnabled(bool enabled);
-    virtual void clipboardPasteText(std::string text);
-    virtual void clipboardPasteImage(GdkPixbuf* img);
-    virtual void clipboardPasteXournal(ObjectInputStream& in);
-    virtual void deleteSelection();
+    void clipboardCutCopyEnabled(bool enabled) override;
+    void clipboardPasteEnabled(bool enabled) override;
+    void clipboardPasteText(std::string text) override;
+    void clipboardPasteImage(GdkPixbuf* img) override;
+    void clipboardPasteXournal(ObjectInputStream& in) override;
+    void deleteSelection() override;
 
     void clipboardPaste(Element* e);
 
@@ -296,6 +320,7 @@ protected:
 
     void rotationSnappingToggle();
     void gridSnappingToggle();
+    void highlightPositionToggle();
 
     bool showSaveDialog();
 
@@ -334,6 +359,14 @@ private:
      * Applies the preferred language to the UI
      */
     void applyPreferredLanguage();
+
+    /**
+     * @brief Get the pen line style to select in the toolbar
+     *
+     * @return style to select, empty if no style should be selected (active
+     * selection with differing line styles)
+     */
+    auto getLineStyleToSelect() -> std::optional<std::string> const;
 
     RecentManager* recent = nullptr;
     UndoRedoHandler* undoRedo = nullptr;

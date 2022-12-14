@@ -4,9 +4,29 @@
 
 #include "InputContext.h"
 
-#include "control/DeviceListHelper.h"
+#include <cassert>  // for assert
+#include <cstddef>  // for NULL
+#include <vector>   // for vector
 
-#include "InputEvents.h"
+#include <glib-object.h>  // for g_signal_hand...
+
+#include "control/Control.h"                            // for Control
+#include "control/DeviceListHelper.h"                   // for InputDevice
+#include "control/settings/Settings.h"                  // for Settings
+#include "gui/XournalView.h"                            // for XournalView
+#include "gui/inputdevices/HandRecognition.h"           // for HandRecognition
+#include "gui/inputdevices/KeyboardInputHandler.h"      // for KeyboardInput...
+#include "gui/inputdevices/MouseInputHandler.h"         // for MouseInputHan...
+#include "gui/inputdevices/StylusInputHandler.h"        // for StylusInputHa...
+#include "gui/inputdevices/TouchDrawingInputHandler.h"  // for TouchDrawingI...
+#include "gui/inputdevices/TouchInputHandler.h"         // for TouchInputHan...
+
+#include "InputEvents.h"            // for InputEvent
+#include "SetsquareInputHandler.h"  // for SetsquareInpu...
+#include "config-debug.h"           // for DEBUG_INPUT
+
+class ScrollHandling;
+class ToolHandler;
 
 InputContext::InputContext(XournalView* view, ScrollHandling* scrollHandling) {
     this->view = view;
@@ -17,6 +37,7 @@ InputContext::InputContext(XournalView* view, ScrollHandling* scrollHandling) {
     this->touchDrawingHandler = new TouchDrawingInputHandler(this);
     this->mouseHandler = new MouseInputHandler(this);
     this->keyboardHandler = new KeyboardInputHandler(this);
+    this->setsquareHandler = std::make_unique<SetsquareInputHandler>(this);
 
     for (const InputDevice& savedDevices: this->view->getControl()->getSettings()->getKnownInputDevices()) {
         this->knownDevices.insert(savedDevices.getName());
@@ -24,6 +45,9 @@ InputContext::InputContext(XournalView* view, ScrollHandling* scrollHandling) {
 }
 
 InputContext::~InputContext() {
+    // Destructor is called in xournal_widget_dispose, so it can still accept events
+    g_signal_handler_disconnect(this->widget, signal_id);
+
     delete this->stylusHandler;
     this->stylusHandler = nullptr;
 
@@ -41,6 +65,7 @@ InputContext::~InputContext() {
 }
 
 void InputContext::connect(GtkWidget* pWidget) {
+    assert(!this->widget);
     this->widget = pWidget;
     gtk_widget_set_support_multidevice(widget, true);
 
@@ -58,7 +83,7 @@ void InputContext::connect(GtkWidget* pWidget) {
 
     gtk_widget_add_events(pWidget, mask);
 
-    g_signal_connect(pWidget, "event", G_CALLBACK(eventCallback), this);
+    signal_id = g_signal_connect(pWidget, "event", G_CALLBACK(eventCallback), this);
 }
 
 auto InputContext::eventCallback(GtkWidget* widget, GdkEvent* event, InputContext* self) -> bool {
@@ -101,6 +126,11 @@ auto InputContext::handle(GdkEvent* sourceEvent) -> bool {
     this->modifierState = event.state;
 
     // separate events to appropriate handlers
+    // handle setsquare
+    if (this->setsquareHandler->handle(event)) {
+        return true;
+    }
+
     // handle tablet stylus
     if (event.deviceClass == INPUT_DEVICE_PEN || event.deviceClass == INPUT_DEVICE_ERASER) {
         return this->stylusHandler->handle(event);
@@ -164,6 +194,7 @@ void InputContext::focusWidget() {
 }
 
 void InputContext::blockDevice(InputContext::DeviceType deviceType) {
+    this->setsquareHandler->blockDevice(deviceType);
     switch (deviceType) {
         case MOUSE:
             this->mouseHandler->block(true);
@@ -179,6 +210,7 @@ void InputContext::blockDevice(InputContext::DeviceType deviceType) {
 }
 
 void InputContext::unblockDevice(InputContext::DeviceType deviceType) {
+    this->setsquareHandler->unblockDevice(deviceType);
     switch (deviceType) {
         case MOUSE:
             this->mouseHandler->block(false);
@@ -261,7 +293,7 @@ void InputContext::printDebug(GdkEvent* event) {
                                    "GDK_PAD_STRIP",
                                    "GDK_PAD_GROUP_MODE",
                                    "GDK_EVENT_LAST"};
-    message += "Event type:\t" + gdkEventTypes[event->type + 1] + "\n";
+    message += "Event type:\t" + gdkEventTypes[gdk_event_get_event_type(event) + 1] + "\n";
 
     std::string gdkInputSources[] = {"GDK_SOURCE_MOUSE",    "GDK_SOURCE_PEN",        "GDK_SOURCE_ERASER",
                                      "GDK_SOURCE_CURSOR",   "GDK_SOURCE_KEYBOARD",   "GDK_SOURCE_TOUCHSCREEN",
@@ -275,8 +307,10 @@ void InputContext::printDebug(GdkEvent* event) {
     InputDeviceClass deviceClass = InputEvents::translateDeviceType(device, this->getSettings());
     message += "Device Class:\t" + gdkInputClasses[deviceClass] + "\n";
 
-    if (event->type == GDK_BUTTON_PRESS || event->type == GDK_DOUBLE_BUTTON_PRESS ||
-        event->type == GDK_TRIPLE_BUTTON_PRESS || event->type == GDK_BUTTON_RELEASE) {
+    if (gdk_event_get_event_type(event) == GDK_BUTTON_PRESS ||
+        gdk_event_get_event_type(event) == GDK_DOUBLE_BUTTON_PRESS ||
+        gdk_event_get_event_type(event) == GDK_TRIPLE_BUTTON_PRESS ||
+        gdk_event_get_event_type(event) == GDK_BUTTON_RELEASE) {
         guint button;
         if (gdk_event_get_button(event, &button)) {
             message += "Button:\t" + std::to_string(button) + "\n";
@@ -285,7 +319,7 @@ void InputContext::printDebug(GdkEvent* event) {
 
 #ifndef DEBUG_INPUT_PRINT_ALL_MOTION_EVENTS
     static bool motionEventBlock = false;
-    if (event->type == GDK_MOTION_NOTIFY) {
+    if (gdk_event_get_event_type(event) == GDK_MOTION_NOTIFY) {
         if (!motionEventBlock) {
             motionEventBlock = true;
             g_message("%s", message.c_str());

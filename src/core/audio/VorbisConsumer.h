@@ -11,17 +11,14 @@
 
 #pragma once
 
-#include <atomic>
-#include <fstream>
-#include <thread>
-#include <utility>
+#include <atomic>  // for atomic
+#include <thread>  // for thread
 
-#include <sndfile.h>
+#include "filesystem.h"  // for path
 
-#include "control/settings/Settings.h"
-
-#include "AudioQueue.h"
-#include "DeviceInfo.h"
+class Settings;
+template <typename T>
+class AudioQueue;
 
 class VorbisConsumer final {
 public:
@@ -29,7 +26,7 @@ public:
             settings(settings), audioQueue(audioQueue) {}
 
 public:
-    bool start(const std::string& filename);
+    bool start(fs::path const& file);
     void join();
     void stop();
 

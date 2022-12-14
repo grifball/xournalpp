@@ -11,15 +11,19 @@
 
 #pragma once
 
-#include "gui/GladeGui.h"
+#include <gtk/gtk.h>  // for GtkWindow
+
+#include "gui/GladeGui.h"  // for GladeGui
+
+class GladeSearchpath;
 
 class GotoDialog: public GladeGui {
 public:
     GotoDialog(GladeSearchpath* gladeSearchPath, int maxPage);
-    virtual ~GotoDialog();
+    ~GotoDialog() override;
 
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
     // returns the selected page or -1 if closed
     int getSelectedPage() const;

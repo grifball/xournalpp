@@ -18,6 +18,8 @@ Copyright: 2010-2021, Andreas Butti <andreas.butti@gmail.com>
            2019-2020, Julius Lehmann <internet@devpi.de>
            2020-2021, Tobias Hermann <idotobi@users.noreply.github.com>
            2020-2021, Roland Lötscher <roland_loetscher@hotmail.com>
+           2021-2021, Benjamin Hennion <benjamin.hennion@wanadoo.fr>
+           2021-2021, Henry Heino <personalizedrefrigerator@gmail.com>
 License: GPL-2+
 Comment: Source of truth https://github.com/xournalpp/xournalpp/graphs/contributors
          For a full and detailed list of contributors refer to the git log.
@@ -43,6 +45,30 @@ Copyright: 2020, Nararyans R.I.
 License: GPL-3+
 Comment: Source for the licensing information is https://github.com/xournalpp/xournalpp/issues/3103#issuecomment-847043386.
          These icons where heavily inspired by https://github.com/elementary/icons
+
+Files: ui/iconsColor-light/hicolor/scalable/actions/xopp-Tselect-pdf-text-area.svg
+Copyright: 2021, aeghn
+License: GPL-3+
+Comment: See https://github.com/xournalpp/xournalpp/pull/3326
+
+Files: ui/iconsColor-light/hicolor/scalable/actions/xopp-Tselect-pdf-text-hd.svg
+Copyright: 2021, aeghn
+License: GPL-3+
+Comment: See https://github.com/xournalpp/xournalpp/pull/3326
+
+Files: ui/iconsLucide-light/*
+       ui/iconsLucide-dark/*
+Copyright: 2020, Lucide Contributors
+License: ISC
+Comment: See https://github.com/xournalpp/xournalpp/pull/4039
+
+Files: ui/iconsLucide-light/hicolor/scalable/actions/xopp-floating-toolbox.svg
+       ui/iconsLucide-dark/hicolor/scalable/actions/xopp-floating-toolbox.svg
+       ui/iconsLucide-light/hicolor/scalable/actions/xopp-draw-spline.svg
+       ui/iconsLucide-dark/hicolor/scalable/actions/xopp-draw-spline.svg
+Copyright: 2022, Friedrich Schriewer <friedrich.schriewer@gmx.net>
+License: ISC
+Comment: See https://github.com/xournalpp/xournalpp/pull/4039
 
 Files: ui/pixmaps/com.github.xournalpp.xournalpp.svg
        ui/pixmaps/com.github.xournalpp.xournalpp.png
@@ -715,3 +741,19 @@ License: CC-BY-SA-4.0
  public licenses.
  .
  Creative Commons may be contacted at creativecommons.org.
+
+License: ISC
+
+Copyright (c) 2020, Lucide Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

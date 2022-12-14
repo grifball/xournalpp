@@ -1,17 +1,34 @@
 #include "SettingsDialog.h"
 
-#include <utility>
+#include <algorithm>    // for max
+#include <cstddef>      // for NULL, size_t
+#include <type_traits>  // for __underlying_type_im...
 
-#include <config.h>
+#include <gdk/gdk.h>      // for GdkRGBA, GdkRectangle
+#include <glib-object.h>  // for G_CALLBACK, g_signal...
 
-#include "control/DeviceListHelper.h"
-#include "control/tools/StrokeStabilizerEnum.h"
-#include "gui/widgets/ZoomCallib.h"
-#include "util/StringUtils.h"
-#include "util/Util.h"
-#include "util/i18n.h"
+#include "control/AudioController.h"             // for AudioController
+#include "control/Control.h"                     // for Control
+#include "control/DeviceListHelper.h"            // for getDeviceList, Input...
+#include "control/settings/Settings.h"           // for Settings, SElement
+#include "control/settings/SettingsEnums.h"      // for STYLUS_CURSOR_ARROW
+#include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
+#include "gui/MainWindow.h"                      // for MainWindow
+#include "gui/XournalView.h"                     // for XournalView
+#include "gui/dialog/DeviceClassConfigGui.h"     // for DeviceClassConfigGui
+#include "gui/dialog/LanguageConfigGui.h"        // for LanguageConfigGui
+#include "gui/dialog/LatexSettingsPanel.h"       // for LatexSettingsPanel
+#include "gui/widgets/ZoomCallib.h"              // for zoomcallib_new, zoom...
+#include "util/Color.h"                          // for GdkRGBA_to_argb, rgb...
+#include "util/PathUtil.h"                       // for fromGFile, toGFilename
+#include "util/StringUtils.h"                    // for StringUtils
+#include "util/Util.h"                           // for systemWithMessage
+#include "util/i18n.h"                           // for _
 
-#include "ButtonConfigGui.h"
+#include "ButtonConfigGui.h"  // for ButtonConfigGui
+#include "filesystem.h"       // for is_directory
+
+class GladeSearchpath;
 
 using std::string;
 using std::vector;
@@ -155,10 +172,14 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
 }
 
 SettingsDialog::~SettingsDialog() {
-    for (ButtonConfigGui* bcg: this->buttonConfigs) { delete bcg; }
+    for (ButtonConfigGui* bcg: this->buttonConfigs) {
+        delete bcg;
+    }
     this->buttonConfigs.clear();
 
-    for (DeviceClassConfigGui* dev: this->deviceClassConfigs) { delete dev; }
+    for (DeviceClassConfigGui* dev: this->deviceClassConfigs) {
+        delete dev;
+    }
     this->deviceClassConfigs.clear();
 
     // DO NOT delete settings!
@@ -360,7 +381,6 @@ void SettingsDialog::load() {
     loadCheckbox("cbInputSystemTPCButton", settings->getInputSystemTPCButtonEnabled());
     loadCheckbox("cbInputSystemDrawOutsideWindow", settings->getInputSystemDrawOutsideWindowEnabled());
 
-
     /**
      * Stabilizer related settings
      */
@@ -390,7 +410,8 @@ void SettingsDialog::load() {
     string txt = settings->getDefaultSaveName();
     gtk_entry_set_text(GTK_ENTRY(txtDefaultSaveName), txt.c_str());
 
-    gtk_file_chooser_set_uri(GTK_FILE_CHOOSER(get("fcAudioPath")), settings->getAudioFolder().c_str());
+    gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(get("fcAudioPath")),
+                                        Util::toGFilename(settings->getAudioFolder()).c_str());
 
     GtkWidget* spAutosaveTimeout = get("spAutosaveTimeout");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spAutosaveTimeout), settings->getAutosaveTimeout());
@@ -413,6 +434,9 @@ void SettingsDialog::load() {
 
     GtkWidget* spSnapGridSize = get("spSnapGridSize");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spSnapGridSize), settings->getSnapGridSize() / DEFAULT_GRID_SIZE);
+
+    GtkWidget* spStrokeRecognizerMinSize = get("spStrokeRecognizerMinSize");
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spStrokeRecognizerMinSize), settings->getStrokeRecognizerMinSize());
 
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(get("edgePanSpeed")), settings->getEdgePanSpeed());
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(get("edgePanMaxMult")), settings->getEdgePanMaxMult());
@@ -489,6 +513,16 @@ void SettingsDialog::load() {
             break;
     }
 
+    switch (settings->getIconTheme()) {
+        case ICON_THEME_LUCIDE:
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbIconTheme")), 1);
+            break;
+        case ICON_THEME_COLOR:
+        default:
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbIconTheme")), 0);
+            break;
+    }
+
     bool hideFullscreenMenubar = false;
     bool hideFullscreenSidebar = false;
     bool hidePresentationMenubar = false;
@@ -518,6 +552,7 @@ void SettingsDialog::load() {
     loadCheckbox("cbHidePresentationMenubar", hidePresentationMenubar);
     loadCheckbox("cbHidePresentationSidebar", hidePresentationSidebar);
     loadCheckbox("cbHideMenubarStartup", settings->isMenubarVisible());
+    loadCheckbox("cbShowFilepathInTitlebar", settings->isFilepathInTitlebarShown());
 
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(get("preloadPagesBefore")),
                               static_cast<double>(settings->getPreloadPagesBefore()));
@@ -748,6 +783,16 @@ void SettingsDialog::save() {
             break;
     }
 
+    switch (gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbIconTheme")))) {
+        case 1:
+            settings->setIconTheme(ICON_THEME_LUCIDE);
+            break;
+        case 0:
+        default:
+            settings->setIconTheme(ICON_THEME_COLOR);
+            break;
+    }
+
     bool hideFullscreenMenubar = getCheckbox("cbHideFullscreenMenubar");
     bool hideFullscreenSidebar = getCheckbox("cbHideFullscreenSidebar");
     settings->setFullscreenHideElements(
@@ -759,6 +804,7 @@ void SettingsDialog::save() {
                                                            hidePresentationMenubar, hidePresentationSidebar));
 
     settings->setMenubarVisible(getCheckbox("cbHideMenubarStartup"));
+    settings->setFilepathInTitlebarShown(getCheckbox("cbShowFilepathInTitlebar"));
 
     constexpr auto spinAsUint = [&](GtkSpinButton* btn) {
         int v = gtk_spin_button_get_value_as_int(btn);
@@ -772,10 +818,11 @@ void SettingsDialog::save() {
 
     settings->setDefaultSaveName(gtk_entry_get_text(GTK_ENTRY(get("txtDefaultSaveName"))));
     // Todo(fabian): use Util::fromGFilename!
-    char* uri = gtk_file_chooser_get_uri(GTK_FILE_CHOOSER(get("fcAudioPath")));
-    if (uri != nullptr) {
-        settings->setAudioFolder(uri);
-        g_free(uri);
+    auto file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(get("fcAudioPath")));
+    auto path = Util::fromGFile(file);
+    g_object_unref(file);
+    if (fs::is_directory(path)) {
+        settings->setAudioFolder(path);
     }
 
     GtkWidget* spAutosaveTimeout = get("spAutosaveTimeout");
@@ -837,7 +884,9 @@ void SettingsDialog::save() {
 
     settings->setDisplayDpi(dpi);
 
-    for (ButtonConfigGui* bcg: this->buttonConfigs) { bcg->saveSettings(); }
+    for (ButtonConfigGui* bcg: this->buttonConfigs) {
+        bcg->saveSettings();
+    }
 
     languageConfig->saveSettings();
 
@@ -868,6 +917,9 @@ void SettingsDialog::save() {
             static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spSnapGridTolerance")))));
     settings->setSnapGridSize(
             static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spSnapGridSize"))) * DEFAULT_GRID_SIZE));
+
+    settings->setStrokeRecognizerMinSize(
+            static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spStrokeRecognizerMinSize")))));
 
     int selectedInputDeviceIndex = gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbAudioInputDevice"))) - 1;
     if (selectedInputDeviceIndex >= 0 && selectedInputDeviceIndex < static_cast<int>(this->audioInputDevices.size())) {
@@ -901,7 +953,9 @@ void SettingsDialog::save() {
     settings->setDefaultSeekTime(
             static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spDefaultSeekTime")))));
 
-    for (DeviceClassConfigGui* deviceClassConfigGui: this->deviceClassConfigs) { deviceClassConfigGui->saveSettings(); }
+    for (DeviceClassConfigGui* deviceClassConfigGui: this->deviceClassConfigs) {
+        deviceClassConfigGui->saveSettings();
+    }
 
     this->latexPanel.save(settings->latexSettings);
 
@@ -909,4 +963,5 @@ void SettingsDialog::save() {
 
     this->control->getWindow()->setGtkTouchscreenScrollingForDeviceMapping();
     this->control->initButtonTool();
+    this->control->getWindow()->getXournal()->onSettingsChanged();
 }

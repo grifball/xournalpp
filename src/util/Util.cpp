@@ -1,14 +1,18 @@
 #include "util/Util.h"
 
-#include <array>
-#include <cstdlib>
+#include <array>    // for array
+#include <cstdlib>  // for system
+#include <string>   // for allocator, string
+#include <utility>  // for move
 
-#include <unistd.h>
+#include <gdk/gdk.h>  // for gdk_cairo_set_source_rgba, gdk_t...
+#include <unistd.h>   // for getpid, pid_t
 
-#include "util/Color.h"
-#include "util/PathUtil.h"
-#include "util/XojMsgBox.h"
-#include "util/i18n.h"
+#include "util/Color.h"              // for argb_to_GdkRGBA, rgb_to_GdkRGBA
+#include "util/OutputStream.h"       // for OutputStream
+#include "util/PlaceholderString.h"  // for PlaceholderString
+#include "util/XojMsgBox.h"          // for XojMsgBox
+#include "util/i18n.h"               // for FS, _F
 
 struct CallbackUiData {
     explicit CallbackUiData(std::function<void()> callback): callback(std::move(callback)) {}
@@ -38,13 +42,13 @@ void Util::execInUiThread(std::function<void()>&& callback, gint priority) {
                               new CallbackUiData(std::move(callback)), nullptr);
 }
 
-void Util::cairo_set_source_rgbi(cairo_t* cr, Color color) {
-    auto rgba = rgb_to_GdkRGBA(color);
+void Util::cairo_set_source_rgbi(cairo_t* cr, Color color, double alpha) {
+    auto rgba = argb_to_GdkRGBA(color, alpha);
     gdk_cairo_set_source_rgba(cr, &rgba);
 }
 
-void Util::cairo_set_source_rgbi(cairo_t* cr, Color color, double alpha) {
-    auto rgba = argb_to_GdkRGBA(color, alpha);
+void Util::cairo_set_source_argb(cairo_t* cr, Color color) {
+    auto rgba = argb_to_GdkRGBA(color);
     gdk_cairo_set_source_rgba(cr, &rgba);
 }
 
@@ -75,3 +79,5 @@ void Util::systemWithMessage(const char* command) {
         XojMsgBox::showErrorToUser(nullptr, msg);
     }
 }
+
+bool Util::isFlatpakInstallation() { return fs::exists("/.flatpak-info"); }

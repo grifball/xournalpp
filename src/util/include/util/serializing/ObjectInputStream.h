@@ -11,13 +11,9 @@
 
 #pragma once
 
-#include <sstream>
-
-#include <gtk/gtk.h>
-
-#include "InputStreamException.h"
-
-class Serializable;
+#include <cstddef>  // for size_t
+#include <sstream>  // for istringstream
+#include <string>   // for string
 
 class ObjectInputStream {
 public:
@@ -38,7 +34,9 @@ public:
     std::string readString();
 
     void readData(void** data, int* len);
-    cairo_surface_t* readImage();
+
+    /// Reads raw image data from the stream.
+    std::string readImage();
 
 private:
     void checkType(char type);

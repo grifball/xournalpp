@@ -1,35 +1,45 @@
 #include "EditSelection.h"
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
+#include <algorithm>  // for min, max, stable_sort
+#include <cmath>      // for abs, cos, sin, cop...
+#include <cstddef>    // for size_t
+#include <limits>     // for numeric_limits
+#include <memory>     // for make_unique, __sha...
+#include <string>     // for string
 
-#include "control/Control.h"
-#include "gui/Layout.h"
-#include "gui/PageView.h"
-#include "gui/XournalView.h"
-#include "gui/XournalppCursor.h"
-#include "gui/widgets/XournalWidget.h"
-#include "model/Document.h"
-#include "model/Element.h"
-#include "model/Layer.h"
-#include "model/Stroke.h"
-#include "model/Text.h"
-#include "undo/ArrangeUndoAction.h"
-#include "undo/ColorUndoAction.h"
-#include "undo/FontUndoAction.h"
-#include "undo/InsertUndoAction.h"
-#include "undo/LineStyleUndoAction.h"
-#include "undo/SizeUndoAction.h"
-#include "undo/UndoRedoHandler.h"
-#include "util/i18n.h"
-#include "util/serializing/ObjectInputStream.h"
-#include "util/serializing/ObjectOutputStream.h"
+#include <gdk/gdk.h>  // for gdk_cairo_set_sour...
 
-#include "EditSelectionContents.h"
-#include "Selection.h"
+#include "control/Control.h"                       // for Control
+#include "control/settings/Settings.h"             // for Settings
+#include "control/tools/CursorSelectionType.h"     // for CURSOR_SELECTION_NONE
+#include "control/tools/SnapToGridInputHandler.h"  // for SnapToGridInputHan...
+#include "control/zoom/ZoomControl.h"              // for ZoomControl
+#include "gui/Layout.h"                            // for Layout
+#include "gui/PageView.h"                          // for XojPageView
+#include "gui/XournalView.h"                       // for XournalView
+#include "gui/XournalppCursor.h"                   // for XournalppCursor
+#include "gui/widgets/XournalWidget.h"             // for gtk_xournal_get_la...
+#include "model/Document.h"                        // for Document
+#include "model/Element.h"                         // for Element::Index
+#include "model/Layer.h"                           // for Layer
+#include "model/LineStyle.h"                       // for LineStyle
+#include "model/Point.h"                           // for Point
+#include "model/XojPage.h"                         // for XojPage
+#include "undo/ArrangeUndoAction.h"                // for ArrangeUndoAction
+#include "undo/InsertUndoAction.h"                 // for InsertsUndoAction
+#include "undo/UndoRedoHandler.h"                  // for UndoRedoHandler
+#include "util/Range.h"                            // for Range
+#include "util/i18n.h"                             // for _
+#include "util/serializing/ObjectInputStream.h"    // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"   // for ObjectOutputStream
+
+#include "EditSelectionContents.h"  // for EditSelectionConte...
+#include "Selection.h"              // for Selection
+
+class XojFont;
 
 using std::vector;
+using xoj::util::Rectangle;
 
 /// Smallest can scale down to, in pixels.
 constexpr size_t MINPIXSIZE = 5;
@@ -42,13 +52,13 @@ constexpr int ROTATE_PADDING = 8;
 constexpr unsigned int PAN_TIMER_RATE = 30;
 
 EditSelection::EditSelection(UndoRedoHandler* undo, const PageRef& page, XojPageView* view):
-        snappingHandler(view->getXournal()->getControl()->getSettings()),
         x(0),
         y(0),
         rotation(0),
         width(0),
         height(0),
-        snappedBounds(Rectangle<double>{}) {
+        snappedBounds(Rectangle<double>{}),
+        snappingHandler(view->getXournal()->getControl()->getSettings()) {
     construct(undo, view, page);
 }
 
@@ -59,7 +69,7 @@ EditSelection::EditSelection(UndoRedoHandler* undo, Selection* selection, XojPag
     construct(undo, view, view->getPage());
 
     // Construct the insert order
-    std::vector<std::pair<Element*, Layer::ElementIndex>> order;
+    std::vector<std::pair<Element*, Element::Index>> order;
     for (Element* e: selection->selectedElements) {
         auto i = std::make_pair(e, this->sourceLayer->indexOf(e));
         order.insert(std::upper_bound(order.begin(), order.end(), i, EditSelectionContents::insertOrderCmp), i);
@@ -94,6 +104,23 @@ EditSelection::EditSelection(UndoRedoHandler* undo, const vector<Element*>& elem
         addElement(e, this->sourceLayer->indexOf(e));
         this->sourceLayer->removeElement(e, false);
     }
+
+    view->rerenderPage();
+}
+
+EditSelection::EditSelection(UndoRedoHandler* undo, XojPageView* view, const PageRef& page, Layer* layer):
+        snappingHandler(view->getXournal()->getControl()->getSettings()) {
+    const auto& elements = layer->getElements();
+    calcSizeFromElements(elements);
+    construct(undo, view, page);
+
+    long i = 0L;
+    for (Element* e: elements) {
+        addElement(e, i);
+        i++;
+    }
+
+    layer->clearNoFree();
 
     view->rerenderPage();
 }
@@ -245,6 +272,26 @@ auto EditSelection::getRect() const -> Rectangle<double> {
 }
 
 /**
+ * gets the minimal bounding box containing all elements of the selection used for e.g. grid snapping
+ */
+auto EditSelection::getSnappedBounds() const -> Rectangle<double> { return Rectangle<double>{this->snappedBounds}; }
+
+/**
+ * get the original bounding rectangle in document coordinates
+ */
+auto EditSelection::getOriginalBounds() const -> Rectangle<double> { return Rectangle<double>{this->contents->getOriginalBounds()}; }
+
+/**
+ * Get the rotation angle of the selection
+ */
+auto EditSelection::getRotation() const -> double { return this->rotation; }
+
+/**
+ * Get if the selection supports being rotated
+ */
+auto EditSelection::isRotationSupported() const -> bool { return this->supportRotation; }
+
+/**
  * Get the source page (where the selection was done)
  */
 auto EditSelection::getSourcePage() -> PageRef { return this->sourcePage; }
@@ -315,7 +362,7 @@ void EditSelection::fillUndoItem(DeleteUndoAction* undo) { this->contents->fillU
  * Add an element to this selection
  *
  */
-void EditSelection::addElement(Element* e, Layer::ElementIndex order) {
+void EditSelection::addElement(Element* e, Element::Index order) {
     this->contents->addElement(e, order);
 
     if (e->rescaleOnlyAspectRatio()) {
@@ -335,27 +382,24 @@ void EditSelection::addElement(Element* e, Layer::ElementIndex order) {
 /**
  * Returns all containing elements of this selection
  */
-auto EditSelection::getElements() -> vector<Element*>* { return this->contents->getElements(); }
-auto EditSelection::getElements() const -> const vector<Element*>* { return this->contents->getElements(); }
+auto EditSelection::getElements() const -> const vector<Element*>& { return this->contents->getElements(); }
 
 /**
  * Returns the insert order of this selection
  */
-auto EditSelection::getInsertOrder() const -> std::deque<std::pair<Element*, Layer::ElementIndex>> const& {
+auto EditSelection::getInsertOrder() const -> std::deque<std::pair<Element*, Element::Index>> const& {
     return this->contents->getInsertOrder();
 }
 
 auto EditSelection::rearrangeInsertOrder(const OrderChange change) -> UndoActionPtr {
-    using InsertOrder = std::deque<std::pair<Element*, Layer::ElementIndex>>;
+    using InsertOrder = std::deque<std::pair<Element*, Element::Index>>;
     const InsertOrder oldOrd = this->getInsertOrder();
     InsertOrder newOrd;
     std::string desc = _("Arrange");
     switch (change) {
         case OrderChange::BringToFront:
             // Set to largest positive signed integer
-            for (const auto& [e, _]: oldOrd) {
-                newOrd.emplace_back(e, std::numeric_limits<Layer::ElementIndex>::max());
-            }
+            for (const auto& [e, _]: oldOrd) { newOrd.emplace_back(e, std::numeric_limits<Element::Index>::max()); }
             desc = _("Bring to front");
             break;
         case OrderChange::BringForward:
@@ -363,7 +407,7 @@ auto EditSelection::rearrangeInsertOrder(const OrderChange change) -> UndoAction
             newOrd = oldOrd;
             std::stable_sort(newOrd.begin(), newOrd.end(), EditSelectionContents::insertOrderCmp);
             if (!newOrd.empty()) {
-                Layer::ElementIndex i = newOrd.back().second + 1;
+                Element::Index i = newOrd.back().second + 1;
                 for (auto& it: newOrd) { it.second = i++; }
             }
             desc = _("Bring forward");
@@ -373,14 +417,14 @@ auto EditSelection::rearrangeInsertOrder(const OrderChange change) -> UndoAction
             newOrd = oldOrd;
             std::stable_sort(newOrd.begin(), newOrd.end(), EditSelectionContents::insertOrderCmp);
             if (!newOrd.empty()) {
-                Layer::ElementIndex i = newOrd.front().second;
+                Element::Index i = newOrd.front().second;
                 i = i > 0 ? i - 1 : 0;
                 for (auto& it: newOrd) { it.second = i++; }
             }
             desc = _("Send backward");
             break;
         case OrderChange::SendToBack:
-            Layer::ElementIndex i = 0;
+            Element::Index i = 0;
             for (const auto& [e, _]: oldOrd) {
                 newOrd.emplace_back(e, i);
                 i++;
@@ -671,7 +715,7 @@ void EditSelection::translateToView(XojPageView* v) {
 
 void EditSelection::copySelection() {
     // clone elements in the insert order
-    std::deque<std::pair<Element*, Layer::ElementIndex>> clonedInsertOrder;
+    std::deque<std::pair<Element*, Element::Index>> clonedInsertOrder;
     for (auto [e, index]: getInsertOrder()) { clonedInsertOrder.emplace_back(e->clone(), index); }
 
     // apply transformations and add to layer
@@ -683,7 +727,7 @@ void EditSelection::copySelection() {
     // add undo action
     PageRef page = this->view->getPage();
     Layer* layer = page->getSelectedLayer();
-    undo->addUndoAction(std::unique_ptr<UndoAction>(new InsertsUndoAction(page, layer, *getElements())));
+    undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, getElements()));
 }
 
 /**
@@ -725,6 +769,7 @@ void EditSelection::setEdgePan(bool pan) {
                               nullptr);
         g_source_attach(this->edgePanHandler, nullptr);
     } else if (!pan && this->edgePanHandler) {
+        g_source_destroy(this->edgePanHandler);
         g_source_unref(this->edgePanHandler);
         this->edgePanHandler = nullptr;
         this->edgePanInhibitNext = false;
@@ -964,36 +1009,38 @@ void EditSelection::paint(cairo_t* cr, double zoom) {
     gdk_cairo_set_source_rgba(cr, &applied);
     cairo_fill(cr);
 
-    cairo_set_dash(cr, nullptr, 0, 0);
+    ToolHandler* toolHandler = view->getXournal()->getControl()->getToolHandler();
+    if (toolHandler->getToolType() != TOOL_HAND) {
+        cairo_set_dash(cr, nullptr, 0, 0);
+        if (!this->aspectRatio) {
+            // top
+            drawAnchorRect(cr, x + width / 2, y, zoom);
+            // bottom
+            drawAnchorRect(cr, x + width / 2, y + height, zoom);
+            // left
+            drawAnchorRect(cr, x, y + height / 2, zoom);
+            // right
+            drawAnchorRect(cr, x + width, y + height / 2, zoom);
 
-    if (!this->aspectRatio) {
-        // top
-        drawAnchorRect(cr, x + width / 2, y, zoom);
-        // bottom
-        drawAnchorRect(cr, x + width / 2, y + height, zoom);
-        // left
-        drawAnchorRect(cr, x, y + height / 2, zoom);
-        // right
-        drawAnchorRect(cr, x + width, y + height / 2, zoom);
-
-        if (supportRotation) {
-            // rotation handle
-            drawAnchorRotation(cr, std::min(x, x + width) + std::abs(width) + (ROTATE_PADDING + this->btnWidth) / zoom,
-                               y + height / 2, zoom);
+            if (supportRotation) {
+                // rotation handle
+                drawAnchorRotation(cr,
+                                   std::min(x, x + width) + std::abs(width) + (ROTATE_PADDING + this->btnWidth) / zoom,
+                                   y + height / 2, zoom);
+            }
         }
+
+        // top left
+        drawAnchorRect(cr, x, y, zoom);
+        // top right
+        drawAnchorRect(cr, x + width, y, zoom);
+        // bottom left
+        drawAnchorRect(cr, x, y + height, zoom);
+        // bottom right
+        drawAnchorRect(cr, x + width, y + height, zoom);
+
+        drawDeleteRect(cr, std::min(x, x + width) - (DELETE_PADDING + this->btnWidth) / zoom, y, zoom);
     }
-
-    // top left
-    drawAnchorRect(cr, x, y, zoom);
-    // top right
-    drawAnchorRect(cr, x + width, y, zoom);
-    // bottom left
-    drawAnchorRect(cr, x, y + height, zoom);
-    // bottom right
-    drawAnchorRect(cr, x + width, y + height, zoom);
-
-
-    drawDeleteRect(cr, std::min(x, x + width) - (DELETE_PADDING + this->btnWidth) / zoom, y, zoom);
 }
 
 void EditSelection::drawAnchorRotation(cairo_t* cr, double x, double y, double zoom) {
@@ -1056,8 +1103,8 @@ void EditSelection::serialize(ObjectOutputStream& out) const {
     this->contents->serialize(out);
     out.endObject();
 
-    out.writeInt(static_cast<int>(this->getElements()->size()));
-    for (Element* e: *this->getElements()) { e->serialize(out); }
+    out.writeInt(static_cast<int>(this->getElements().size()));
+    for (Element* e: this->getElements()) { e->serialize(out); }
 }
 
 void EditSelection::readSerialized(ObjectInputStream& in) {

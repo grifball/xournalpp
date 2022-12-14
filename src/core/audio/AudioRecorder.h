@@ -11,30 +11,34 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-#include <vector>
+#include <memory>  // for make_unique, unique_ptr
+#include <vector>  // for vector
 
-#include "control/settings/Settings.h"
+#include "filesystem.h"  // for path
 
-#include "AudioQueue.h"
-#include "PortAudioProducer.h"
-#include "VorbisConsumer.h"
+template <typename T>
+class AudioQueue;
+class DeviceInfo;
+class PortAudioProducer;
+class Settings;
+class VorbisConsumer;
 
-
-struct AudioRecorder {
-    explicit AudioRecorder(Settings& settings): settings(settings) {}
+class AudioRecorder final {
+public:
+    explicit AudioRecorder(Settings& settings);
+    AudioRecorder(AudioRecorder const&) = delete;
+    AudioRecorder(AudioRecorder&&) = delete;
+    auto operator=(AudioRecorder const&) -> AudioRecorder& = delete;
+    auto operator=(AudioRecorder&&) -> AudioRecorder& = delete;
     ~AudioRecorder();
 
-    bool start(const std::string& filename);
+    bool start(fs::path const& file);
     void stop();
-    bool isRecording() const;
+    [[nodiscard]] bool isRecording() const;
     std::vector<DeviceInfo> getInputDevices() const;
 
 private:
-    Settings& settings;
-
-    std::unique_ptr<AudioQueue<float>> audioQueue = std::make_unique<AudioQueue<float>>();
-    std::unique_ptr<PortAudioProducer> portAudioProducer = std::make_unique<PortAudioProducer>(settings, *audioQueue);
-    std::unique_ptr<VorbisConsumer> vorbisConsumer = std::make_unique<VorbisConsumer>(settings, *audioQueue);
+    std::unique_ptr<AudioQueue<float>> audioQueue;
+    std::unique_ptr<PortAudioProducer> portAudioProducer;
+    std::unique_ptr<VorbisConsumer> vorbisConsumer;
 };

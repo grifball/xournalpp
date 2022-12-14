@@ -11,23 +11,30 @@
 
 #pragma once
 
-#include <deque>
+#include <deque>    // for deque
+#include <string>   // for string
+#include <utility>  // for pair
+#include <vector>   // for vector
 
-#include "model/Layer.h"
+#include "model/Element.h"  // for Element::Index, Element
+#include "model/PageRef.h"  // for PageRef
 
-#include "UndoAction.h"
+#include "UndoAction.h"  // for UndoAction
+
+class Control;
+class Layer;
 
 class ArrangeUndoAction: public UndoAction {
 public:
-    using InsertOrder = std::deque<std::pair<Element*, Layer::ElementIndex>>;
+    using InsertOrder = std::deque<std::pair<Element*, Element::Index>>;
 
     ArrangeUndoAction(const PageRef& page, Layer* layer, std::string desc, InsertOrder oldOrder, InsertOrder newOrder);
-    virtual ~ArrangeUndoAction() override;
+    ~ArrangeUndoAction() override;
 
 public:
-    virtual bool undo(Control* control) override;
-    virtual bool redo(Control* control) override;
-    virtual std::string getText() override;
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
+    std::string getText() override;
 
 private:
     void applyRearrange();

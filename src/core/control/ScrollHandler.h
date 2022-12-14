@@ -11,22 +11,17 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
 
-#include <gtk/gtk.h>
+#include "gui/widgets/SpinPageAdapter.h"  // for SpinPageListener
+#include "model/PageRef.h"                // for PageRef
 
-#include "gui/widgets/SpinPageAdapter.h"
-#include "model/PageRef.h"
-
-
-class XojPage;
 class Control;
 
 class ScrollHandler: public SpinPageListener {
 public:
     ScrollHandler(Control* control);
-    virtual ~ScrollHandler();
+    ~ScrollHandler() override;
 
 public:
     void goToPreviousPage();
@@ -44,7 +39,7 @@ public:
     bool isPageVisible(size_t page, int* visibleHeight = nullptr);
 
 public:
-    virtual void pageChanged(size_t page);
+    void pageChanged(size_t page) override;
 
 private:
     void scrollToSpinPage();

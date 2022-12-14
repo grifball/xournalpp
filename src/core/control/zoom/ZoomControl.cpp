@@ -1,9 +1,22 @@
 #include "ZoomControl.h"
 
-#include <cmath>
+#include <algorithm>  // for find, max
 
-#include "control/Control.h"
-#include "gui/XournalView.h"
+#include <glib-object.h>  // for G_CALLBACK, g_signal_connect
+#include <glib.h>         // for g_assert_true, g_warning, guint
+
+#include "control/Control.h"            // for Control
+#include "control/settings/Settings.h"  // for Settings
+#include "control/zoom/ZoomListener.h"  // for ZoomListener
+#include "enums/ActionGroup.enum.h"     // for GROUP_ZOOM_FIT
+#include "enums/ActionType.enum.h"      // for ACTION_NOT_SELECTED, ACTION_Z...
+#include "gui/Layout.h"                 // for Layout
+#include "gui/PageView.h"               // for XojPageView
+#include "gui/XournalView.h"            // for XournalView
+#include "gui/widgets/XournalWidget.h"  // for gtk_xournal_get_layout
+#include "util/Util.h"                  // for execInUiThread
+
+using xoj::util::Rectangle;
 
 auto onScrolledwindowMainScrollEvent(GtkWidget* widget, GdkEventScroll* event, ZoomControl* zoom) -> bool {
     guint state = event->state & gtk_accelerator_get_default_mod_mask();
@@ -204,6 +217,12 @@ auto ZoomControl::getScrollPositionAfterZoom() const -> utl::Point<double> {
 
 void ZoomControl::addZoomListener(ZoomListener* l) { this->listener.emplace_back(l); }
 
+void ZoomControl::removeZoomListener(ZoomListener* l) {
+    if (auto it = std::find(this->listener.begin(), this->listener.end(), l); it != this->listener.end()) {
+        this->listener.erase(it);
+    }
+}
+
 void ZoomControl::initZoomHandler(GtkWidget* window, GtkWidget* widget, XournalView* v, Control* c) {
     this->control = c;
     this->view = v;
@@ -235,6 +254,9 @@ auto ZoomControl::getZoom() const -> double { return this->zoom; }
 auto ZoomControl::getZoomReal() const -> double { return this->zoom / this->zoom100Value; }
 
 void ZoomControl::setZoom(double zoomI) {
+    if (this->zoom == zoomI) {
+        return;
+    }
     this->zoom = zoomI;
     fireZoomChanged();
 }

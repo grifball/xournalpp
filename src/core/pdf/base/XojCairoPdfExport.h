@@ -11,27 +11,35 @@
 
 #pragma once
 
-#include "control/jobs/BaseExportJob.h"
-#include "control/jobs/ProgressListener.h"
-#include "model/Document.h"
+#include <cstddef>  // for size_t
+#include <string>   // for string
 
-#include "XojPdfExport.h"
-#include "filesystem.h"
+#include <cairo.h>    // for CAIRO_VERSION, CAIRO_VERSION...
+#include <gtk/gtk.h>  // for GtkTreeModel
+
+#include "control/jobs/BaseExportJob.h"  // for ExportBackgroundType, EXPORT...
+#include "util/ElementRange.h"           // for PageRangeVector
+
+#include "XojPdfExport.h"  // for XojPdfExport
+#include "filesystem.h"    // for path
+
+class Document;
+class ProgressListener;
 
 class XojCairoPdfExport: public XojPdfExport {
 public:
     XojCairoPdfExport(Document* doc, ProgressListener* progressListener);
-    virtual ~XojCairoPdfExport();
+    ~XojCairoPdfExport() override;
 
 public:
-    virtual bool createPdf(fs::path const& file, bool progressiveMode);
-    virtual bool createPdf(fs::path const& file, PageRangeVector& range, bool progressiveMode);
-    virtual std::string getLastError();
+    bool createPdf(fs::path const& file, bool progressiveMode) override;
+    bool createPdf(fs::path const& file, const PageRangeVector& range, bool progressiveMode) override;
+    std::string getLastError() override;
 
     /**
      * Export without background
      */
-    virtual void setExportBackground(ExportBackgroundType exportBackground);
+    void setExportBackground(ExportBackgroundType exportBackground) override;
 
 private:
     bool startPdf(const fs::path& file);
@@ -53,6 +61,12 @@ private:
      * new page */
     void exportPageLayers(size_t page);
 
+    /**
+     * @brief Select layers to export by parsing str
+     * @param rangeStr A string parsed to get a list of layers
+     */
+    void setLayerRange(const char* rangeStr) override;
+
 private:
     Document* doc = nullptr;
     ProgressListener* progressListener = nullptr;
@@ -63,4 +77,6 @@ private:
     ExportBackgroundType exportBackground = EXPORT_BACKGROUND_ALL;
 
     std::string lastError;
+
+    std::unique_ptr<LayerRangeVector> layerRange;
 };

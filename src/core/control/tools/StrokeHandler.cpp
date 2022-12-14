@@ -1,62 +1,90 @@
 #include "StrokeHandler.h"
 
-#include <cmath>
-#include <memory>
+#include <algorithm>  // for max, min
+#include <cassert>    // for assert
+#include <cfloat>     // for DBL_EPSILON
+#include <cmath>      // for ceil, pow, abs
+#include <memory>     // for unique_ptr, mak...
+#include <utility>    // for move
+#include <vector>     // for vector
 
-#include <gdk/gdk.h>
+#include <gdk/gdk.h>  // for GdkEventKey
 
-#include "control/Control.h"
-#include "control/layer/LayerController.h"
-#include "control/settings/Settings.h"
-#include "control/shaperecognizer/ShapeRecognizer.h"
-#include "gui/PageView.h"
-#include "gui/XournalView.h"
-#include "undo/InsertUndoAction.h"
-#include "undo/RecognizerUndoAction.h"
+#include "control/Control.h"                          // for Control
+#include "control/ToolEnums.h"                        // for DRAWING_TYPE_ST...
+#include "control/ToolHandler.h"                      // for ToolHandler
+#include "control/layer/LayerController.h"            // for LayerController
+#include "control/settings/Settings.h"                // for Settings
+#include "control/shaperecognizer/ShapeRecognizer.h"  // for ShapeRecognizer
+#include "control/tools/InputHandler.h"               // for InputHandler::P...
+#include "control/tools/SnapToGridInputHandler.h"     // for SnapToGridInput...
+#include "control/zoom/ZoomControl.h"
+#include "gui/MainWindow.h"
+#include "gui/PageView.h"                        // for XojPageView
+#include "gui/XournalView.h"                     // for XournalView
+#include "gui/inputdevices/PositionInputData.h"  // for PositionInputData
+#include "model/Layer.h"                         // for Layer
+#include "model/LineStyle.h"                     // for LineStyle
+#include "model/Stroke.h"                        // for Stroke, STROKE_...
+#include "model/XojPage.h"                       // for XojPage
+#include "undo/InsertUndoAction.h"               // for InsertUndoAction
+#include "undo/RecognizerUndoAction.h"           // for RecognizerUndoA...
+#include "undo/UndoRedoHandler.h"                // for UndoRedoHandler
+#include "util/Color.h"                          // for cairo_set_sourc...
+#include "util/Range.h"                          // for Range
+#include "util/Rectangle.h"                      // for Rectangle, util
+#include "view/StrokeView.h"                     // for StrokeView, Str...
+#include "view/View.h"                           // for Context
 
-#include "StrokeStabilizer.h"
-#include "config-features.h"
+#include "StrokeStabilizer.h"  // for Base, get
+
+using namespace xoj::util;
 
 guint32 StrokeHandler::lastStrokeTime;  // persist for next stroke
 
-
-StrokeHandler::StrokeHandler(XournalView* xournal, XojPageView* redrawable, const PageRef& page):
-        InputHandler(xournal, redrawable, page),
-        snappingHandler(xournal->getControl()->getSettings()),
-        stabilizer(StrokeStabilizer::get(xournal->getControl()->getSettings())) {}
-
-StrokeHandler::~StrokeHandler() {
-    destroySurface();
-}
+StrokeHandler::StrokeHandler(Control* control, XojPageView* pageView, const PageRef& page):
+        InputHandler(control, page),
+        snappingHandler(control->getSettings()),
+        stabilizer(StrokeStabilizer::get(control->getSettings())),
+        pageView(pageView) {}
 
 void StrokeHandler::draw(cairo_t* cr) {
-    if (!stroke) {
-        return;
+    assert(stroke && stroke->getPointCount() > 0);
+
+    auto setColorAndBlendMode = [stroke = this->stroke.get(), cr]() {
+        if (stroke->getToolType() == StrokeTool::HIGHLIGHTER) {
+            if (auto fill = stroke->getFill(); fill != -1) {
+                Util::cairo_set_source_rgbi(cr, stroke->getColor(), static_cast<double>(fill) / 255.0);
+            } else {
+                Util::cairo_set_source_rgbi(cr, stroke->getColor(), xoj::view::StrokeView::OPACITY_HIGHLIGHTER);
+            }
+            cairo_set_operator(cr, CAIRO_OPERATOR_MULTIPLY);
+        } else {
+            Util::cairo_set_source_rgbi(cr, stroke->getColor());
+            cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+        }
+    };
+
+    if (this->mask) {
+        setColorAndBlendMode();
+        cairo_mask_surface(cr, mask->surf, 0, 0);
+    } else {
+        if (this->stroke->getPointCount() == 1) {
+            // drawStroke does not handle single dots
+            const Point& pt = this->stroke->getPoint(0);
+            double width = this->stroke->getWidth() * (this->hasPressure ? pt.z : 1.0);
+            setColorAndBlendMode();
+            this->paintDot(cr, pt.x, pt.y, width);
+        } else {
+            strokeView->draw(xoj::view::Context::createDefault(cr));
+        }
     }
-
-    if (this->fullRedraw) {
-        /**
-         * Erase the mask entirely in this case
-         */
-        cairo_set_operator(crMask, CAIRO_OPERATOR_CLEAR);
-        cairo_paint(crMask);
-
-        cairo_set_operator(crMask, CAIRO_OPERATOR_SOURCE);
-        view.drawStroke(crMask, stroke, true);
-    }
-    DocumentView::applyColor(cr, stroke);
-
-    cairo_set_operator(
-            cr, stroke->getToolType() == STROKE_TOOL_HIGHLIGHTER ? CAIRO_OPERATOR_MULTIPLY : CAIRO_OPERATOR_OVER);
-
-    cairo_mask_surface(cr, surfMask, 0, 0);
 }
-
 
 auto StrokeHandler::onKeyEvent(GdkEventKey* event) -> bool { return false; }
 
 
-auto StrokeHandler::onMotionNotifyEvent(const PositionInputData& pos) -> bool {
+auto StrokeHandler::onMotionNotifyEvent(const PositionInputData& pos, double zoom) -> bool {
     if (!stroke) {
         return false;
     }
@@ -87,8 +115,12 @@ void StrokeHandler::paintTo(const Point& point) {
                 this->stroke->setLastPressure(point.z);
                 this->firstPointPressureChange = true;
 
-                // Paint the dot for the user to see
-                this->paintDot(endPoint.x, endPoint.y, this->stroke->getWidth() * point.z);
+                double width = this->stroke->getWidth() * point.z;
+                if (mask) {
+                    this->paintDot(mask->cr, endPoint.x, endPoint.y, width);
+                }
+                // Trigger a call to `draw`. If mask == nullopt, the `paintDot` is called in `draw`
+                this->pageView->repaintRect(endPoint.x - 0.5 * width, endPoint.y - 0.5 * width, width, width);
             }
             return;
         }
@@ -149,28 +181,28 @@ void StrokeHandler::drawSegmentTo(const Point& point) {
          */
         const Point& firstPoint = stroke->getPointVector().front();
         rg.addPoint(firstPoint.x, firstPoint.y);
-    } else if (!this->fullRedraw) {
+    } else if (mask) {
         Stroke lastSegment;
 
         lastSegment.addPoint(prevPoint);
         lastSegment.addPoint(point);
         lastSegment.setWidth(width);
 
-        view.drawStroke(crMask, &lastSegment, true);
+        auto context = xoj::view::Context::createColorBlind(mask->cr);
+        xoj::view::StrokeView sView(&lastSegment);
+        sView.draw(context);
     }
 
     width = prevPoint.z != Point::NO_PRESSURE ? prevPoint.z : width;
 
-    this->redrawable->repaintRect(rg.getX() - 0.5 * width, rg.getY() - 0.5 * width, rg.getWidth() + width,
-                                  rg.getHeight() + width);
+    // Trigger a call to `draw`. If mask == nullopt, the stroke is drawn in `draw`
+    this->pageView->repaintRect(rg.getX() - 0.5 * width, rg.getY() - 0.5 * width, rg.getWidth() + width,
+                                rg.getHeight() + width);
 }
 
-void StrokeHandler::onMotionCancelEvent() {
-    delete stroke;
-    stroke = nullptr;
-}
+void StrokeHandler::onSequenceCancelEvent() { stroke.reset(); }
 
-void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
+void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos, double zoom) {
     if (!stroke) {
         return;
     }
@@ -181,8 +213,6 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
      */
     stabilizer->finalizeStroke();
 
-
-    Control* control = xournal->getControl();
     Settings* settings = control->getSettings();
 
     if (settings->getStrokeFilterEnabled())  // Note: For shape tools see BaseStrokeHandler which has a slightly
@@ -194,22 +224,19 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
         settings->getStrokeFilter(&strokeFilterIgnoreTime, &strokeFilterIgnoreLength, &strokeFilterSuccessiveTime);
         double dpmm = settings->getDisplayDpi() / 25.4;
 
-        double zoom = xournal->getZoom();
-
         double lengthSqrd = (pow(((pos.x / zoom) - (this->buttonDownPoint.x)), 2) +
                              pow(((pos.y / zoom) - (this->buttonDownPoint.y)), 2)) *
-                            pow(xournal->getZoom(), 2);
+                            pow(zoom, 2);
 
         if (lengthSqrd < pow((strokeFilterIgnoreLength * dpmm), 2) &&
             pos.timestamp - this->startStrokeTime < strokeFilterIgnoreTime) {
             if (pos.timestamp - StrokeHandler::lastStrokeTime > strokeFilterSuccessiveTime) {
                 // stroke not being added to layer... delete here but clear first!
 
-                this->redrawable->rerenderRect(stroke->getX(), stroke->getY(), stroke->getElementWidth(),
-                                               stroke->getElementHeight());  // clear onMotionNotifyEvent drawing //!
+                this->pageView->rerenderRect(stroke->getX(), stroke->getY(), stroke->getElementWidth(),
+                                             stroke->getElementHeight());  // clear onMotionNotifyEvent drawing //!
 
-                delete stroke;
-                stroke = nullptr;
+                stroke.reset();
                 this->userTapped = true;
 
                 StrokeHandler::lastStrokeTime = pos.timestamp;
@@ -240,14 +267,14 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
 
     UndoRedoHandler* undo = control->getUndoRedoHandler();
 
-    undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke));
+    undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke.get()));
 
     ToolHandler* h = control->getToolHandler();
 
     if (h->getDrawingType() == DRAWING_TYPE_STROKE_RECOGNIZER) {
         ShapeRecognizer reco;
 
-        Stroke* recognized = reco.recognizePatterns(stroke);
+        Stroke* recognized = reco.recognizePatterns(stroke.get(), control->getSettings()->getStrokeRecognizerMinSize());
 
         if (recognized) {
             strokeRecognizerDetected(recognized, layer);
@@ -255,34 +282,33 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
             // Full repaint is done anyway
             // So repaint don't need to be done here
 
-            stroke = nullptr;
+            stroke.release();  // The stroke is now owned by the UndoRedoHandler (to undo the recognition)
             return;
         }
     }
 
-    layer->addElement(stroke);
-    page->fireElementChanged(stroke);
+
+    Stroke* s = stroke.release();
+    layer->addElement(s);
+    page->fireElementChanged(s);
 
     // Manually force the rendering of the stroke, if no motion event occurred between, that would rerender the page.
-    if (stroke->getPointCount() == 2) {
-        this->redrawable->rerenderElement(stroke);
+    if (s->getPointCount() == 2) {
+        this->pageView->rerenderElement(s);
     }
-
-    stroke = nullptr;
 }
 
 void StrokeHandler::strokeRecognizerDetected(Stroke* recognized, Layer* layer) {
     recognized->setWidth(stroke->hasPressure() ? stroke->getAvgPressure() : stroke->getWidth());
 
     // snapping
-    Stroke* snappedStroke = recognized->cloneStroke();
-    if (xournal->getControl()->getSettings()->getSnapRecognizedShapesEnabled()) {
+    if (control->getSettings()->getSnapRecognizedShapesEnabled()) {
         Rectangle<double> oldSnappedBounds = recognized->getSnappedBounds();
         Point topLeft = Point(oldSnappedBounds.x, oldSnappedBounds.y);
         Point topLeftSnapped = snappingHandler.snapToGrid(topLeft, false);
 
-        snappedStroke->move(topLeftSnapped.x - topLeft.x, topLeftSnapped.y - topLeft.y);
-        Rectangle<double> snappedBounds = snappedStroke->getSnappedBounds();
+        recognized->move(topLeftSnapped.x - topLeft.x, topLeftSnapped.y - topLeft.y);
+        Rectangle<double> snappedBounds = recognized->getSnappedBounds();
         Point belowRight = Point(snappedBounds.x + snappedBounds.width, snappedBounds.y + snappedBounds.height);
         Point belowRightSnapped = snappingHandler.snapToGrid(belowRight, false);
 
@@ -292,18 +318,18 @@ void StrokeHandler::strokeRecognizerDetected(Stroke* recognized, Layer* layer) {
         double fy = (std::abs(snappedBounds.height) > DBL_EPSILON) ?
                             (belowRightSnapped.y - topLeftSnapped.y) / snappedBounds.height :
                             1;
-        snappedStroke->scale(topLeftSnapped.x, topLeftSnapped.y, fx, fy, 0, false);
+        recognized->scale(topLeftSnapped.x, topLeftSnapped.y, fx, fy, 0, false);
     }
 
-    auto recognizerUndo = std::make_unique<RecognizerUndoAction>(page, layer, stroke, snappedStroke);
+    auto recognizerUndo = std::make_unique<RecognizerUndoAction>(page, layer, stroke.get(), recognized);
 
-    UndoRedoHandler* undo = xournal->getControl()->getUndoRedoHandler();
+    UndoRedoHandler* undo = control->getUndoRedoHandler();
     undo->addUndoAction(std::move(recognizerUndo));
-    layer->addElement(snappedStroke);
+    layer->addElement(recognized);
 
-    Range range(snappedStroke->getX(), snappedStroke->getY());
-    range.addPoint(snappedStroke->getX() + snappedStroke->getElementWidth(),
-                   snappedStroke->getY() + snappedStroke->getElementHeight());
+    Range range(recognized->getX(), recognized->getY());
+    range.addPoint(recognized->getX() + recognized->getElementWidth(),
+                   recognized->getY() + recognized->getElementHeight());
 
     range.addPoint(stroke->getX(), stroke->getY());
     range.addPoint(stroke->getX() + stroke->getElementWidth(), stroke->getY() + stroke->getElementHeight());
@@ -311,70 +337,76 @@ void StrokeHandler::strokeRecognizerDetected(Stroke* recognized, Layer* layer) {
     page->fireRangeChanged(range);
 }
 
-void StrokeHandler::onButtonPressEvent(const PositionInputData& pos) {
-    destroySurface();
-
-    const double zoom = xournal->getZoom();
-
+void StrokeHandler::onButtonPressEvent(const PositionInputData& pos, double zoom) {
     if (!stroke) {
         this->buttonDownPoint.x = pos.x / zoom;
         this->buttonDownPoint.y = pos.y / zoom;
 
-        createStroke(Point(this->buttonDownPoint.x, this->buttonDownPoint.y, pos.pressure));
+        stroke = createStroke(this->control);
 
-        this->hasPressure = this->stroke->getToolType() == STROKE_TOOL_PEN && pos.pressure != Point::NO_PRESSURE;
-        this->fullRedraw = this->stroke->getFill() != -1 || stroke->getLineStyle().hasDashes();
+        this->hasPressure = this->stroke->getToolType().isPressureSensitive() && pos.pressure != Point::NO_PRESSURE;
+
+        double p = this->hasPressure ? pos.pressure : Point::NO_PRESSURE;
+        stroke->addPoint(Point(this->buttonDownPoint.x, this->buttonDownPoint.y, p));
 
         stabilizer->initialize(this, zoom, pos);
     }
 
-    {  // Initialize the mask
-        const double ratio = zoom * static_cast<double>(xournal->getDpiScaleFactor());
+    double width = this->hasPressure ? this->stroke->getWidth() * pos.pressure : this->stroke->getWidth();
 
-        std::unique_ptr<Rectangle<double>> visibleRect(xournal->getVisibleRect(redrawable));
-
-        // We add a padding to limit graphical bugs when scrolling right after completing a stroke
-        const double strokeWidth = this->stroke->getWidth();
-        const int width = static_cast<int>(std::ceil((visibleRect->width + strokeWidth) * ratio));
-        const int height = static_cast<int>(std::ceil((visibleRect->height + strokeWidth) * ratio));
-
-        surfMask = cairo_image_surface_create(CAIRO_FORMAT_A8, width, height);
-
-        cairo_surface_set_device_offset(surfMask, (0.5 * strokeWidth - visibleRect->x) * ratio,
-                                        (0.5 * strokeWidth - visibleRect->y) * ratio);
-
-        crMask = cairo_create(surfMask);
-
-        cairo_scale(crMask, ratio, ratio);
-
-        // Paint the starting point
-        this->paintDot(this->buttonDownPoint.x, this->buttonDownPoint.y,
-                       this->hasPressure ? this->stroke->getWidth() * pos.pressure : this->stroke->getWidth());
+    bool needAMask = this->stroke->getFill() == -1 && !stroke->getLineStyle().hasDashes();
+    if (needAMask) {
+        // Strokes that require a full redraw don't use a mask
+        this->createMask();
+        this->paintDot(mask->cr, this->buttonDownPoint.x, this->buttonDownPoint.y, width);
+    } else {
+        strokeView.emplace(stroke.get());
     }
+    this->pageView->repaintRect(this->buttonDownPoint.x - 0.5 * width, this->buttonDownPoint.y - 0.5 * width, width,
+                                width);
 
     this->startStrokeTime = pos.timestamp;
 }
 
-void StrokeHandler::onButtonDoublePressEvent(const PositionInputData& pos) {
+void StrokeHandler::onButtonDoublePressEvent(const PositionInputData&, double) {
     // nothing to do
 }
 
-void StrokeHandler::destroySurface() {
-    if (surfMask || crMask) {
-        cairo_destroy(crMask);
-        cairo_surface_destroy(surfMask);
-        surfMask = nullptr;
-        crMask = nullptr;
-    }
+void StrokeHandler::paintDot(cairo_t* cr, const double x, const double y, const double width) const {
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_width(cr, width);
+    cairo_move_to(cr, x, y);
+    cairo_line_to(cr, x, y);
+    cairo_stroke(cr);
 }
 
-void StrokeHandler::paintDot(const double x, const double y, const double width) const {
-    cairo_set_line_cap(crMask, CAIRO_LINE_CAP_ROUND);
-    cairo_set_operator(crMask, CAIRO_OPERATOR_OVER);
-    cairo_set_source_rgba(crMask, 1, 1, 1, 1);
-    cairo_set_line_width(crMask, width);
-    cairo_move_to(crMask, x, y);
-    cairo_line_to(crMask, x, y);
-    cairo_stroke(crMask);
-    this->redrawable->repaintRect(x - 0.5 * width, y - 0.5 * width, width, width);
+StrokeHandler::Mask::Mask(int width, int height) {
+    surf = cairo_image_surface_create(CAIRO_FORMAT_A8, width, height);
+    cr = cairo_create(surf);
+    cairo_set_source_rgba(cr, 1, 1, 1, 1);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+}
+
+StrokeHandler::Mask::~Mask() noexcept {
+    cairo_destroy(cr);
+    cairo_surface_destroy(surf);
+}
+
+void StrokeHandler::createMask() {
+    // todo(bhennion) Make xournal-independent on splitting
+    auto xournal = control->getWindow()->getXournal();
+    const double ratio = control->getZoomControl()->getZoom() * static_cast<double>(xournal->getDpiScaleFactor());
+
+    std::unique_ptr<Rectangle<double>> visibleRect(xournal->getVisibleRect(pageView));
+
+    // We add a padding to limit graphical bugs when scrolling right after completing a stroke
+    const double strokeWidth = this->stroke->getWidth();
+    const int width = static_cast<int>(std::ceil((visibleRect->width + strokeWidth) * ratio));
+    const int height = static_cast<int>(std::ceil((visibleRect->height + strokeWidth) * ratio));
+
+    mask.emplace(width, height);
+
+    cairo_surface_set_device_offset(mask->surf, std::round((0.5 * strokeWidth - visibleRect->x) * ratio),
+                                    std::round((0.5 * strokeWidth - visibleRect->y) * ratio));
+    cairo_surface_set_device_scale(mask->surf, ratio, ratio);
 }

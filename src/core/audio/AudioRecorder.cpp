@@ -1,28 +1,28 @@
 #include "AudioRecorder.h"
 
-#include <utility>
+#include "audio/AudioQueue.h"         // for AudioQueue
+#include "audio/DeviceInfo.h"         // for DeviceInfo
+#include "audio/PortAudioProducer.h"  // for PortAudioProducer
+#include "audio/VorbisConsumer.h"     // for VorbisConsumer
+
+AudioRecorder::AudioRecorder(Settings& settings):
+        audioQueue(std::make_unique<AudioQueue<float>>()),
+        portAudioProducer(std::make_unique<PortAudioProducer>(settings, *audioQueue)),
+        vorbisConsumer(std::make_unique<VorbisConsumer>(settings, *audioQueue)) {}
 
 AudioRecorder::~AudioRecorder() { this->stop(); }
 
-auto AudioRecorder::start(const std::string& filename) -> bool {
-    // Start recording
+auto AudioRecorder::start(fs::path const& file) -> bool {
     bool status = this->portAudioProducer->startRecording();
-
     // Start the consumer for writing the data
-    status = status && this->vorbisConsumer->start(filename);
-
+    status = status && this->vorbisConsumer->start(file);
     return status;
 }
 
 void AudioRecorder::stop() {
-    // Stop recording audio
     this->portAudioProducer->stopRecording();
-
-    // Wait for libsox to write all the data
-    this->vorbisConsumer->join();
-
-    // Reset the queue for the next recording
-    this->audioQueue->reset();
+    this->vorbisConsumer->join();  // libsox must write all the data before we can continue
+    this->audioQueue->reset();     // next recording requires empty queue
 }
 
 auto AudioRecorder::isRecording() const -> bool { return this->portAudioProducer->isRecording(); }

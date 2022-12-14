@@ -1,15 +1,24 @@
 #include "ToolHandler.h"
 
-#include <algorithm>
-#include <cstdio>
+#include <algorithm>  // for clamp
+#include <cinttypes>  // for uint32_t
+#include <cstdio>     // for size_t
+#include <optional>   // for nullopt, optional
+#include <string>     // for operator==, string, basic_string
+#include <utility>    // for move
 
-#include <config-debug.h>
-#include <gtk/gtk.h>
+#include <glib.h>  // for g_warning, g_error
 
-#include "model/StrokeStyle.h"
-#include "util/Util.h"
+#include "control/Tool.h"               // for Tool, Tool::toolSizes
+#include "control/settings/Settings.h"  // for SElement, Settings
+#include "enums/ActionGroup.enum.h"     // for GROUP_ERASER_MODE
+#include "enums/ActionType.enum.h"      // for ACTION_TOOL_ERASER_DELETE_STROKE
+#include "model/StrokeStyle.h"          // for StrokeStyle
+#include "util/Color.h"
 
-#include "Actions.h"
+#include "Actions.h"  // for ActionHandler
+
+class LineStyle;
 
 
 ToolListener::~ToolListener() = default;
@@ -31,9 +40,10 @@ void ToolHandler::initTools() {
     thickness[TOOL_SIZE_THICK] = 2.26;
     thickness[TOOL_SIZE_VERY_THICK] = 5.67;
     tools[TOOL_PEN - TOOL_PEN] = std::make_unique<Tool>(
-            "pen", TOOL_PEN, Color{0x3333CCU},
+            "pen", TOOL_PEN, Colors::xopp_royalblue,
             TOOL_CAP_COLOR | TOOL_CAP_SIZE | TOOL_CAP_RULER | TOOL_CAP_RECTANGLE | TOOL_CAP_ELLIPSE | TOOL_CAP_ARROW |
-                    TOOL_CAP_SPLINE | TOOL_CAP_RECOGNIZER | TOOL_CAP_FILL | TOOL_CAP_DASH_LINE,
+                    TOOL_CAP_DOUBLE_ARROW | TOOL_CAP_SPLINE | TOOL_CAP_RECOGNIZER | TOOL_CAP_FILL | TOOL_CAP_DASH_LINE |
+                    TOOL_CAP_LINE_STYLE,
             thickness);
 
     thickness[TOOL_SIZE_VERY_FINE] = 1;
@@ -42,7 +52,7 @@ void ToolHandler::initTools() {
     thickness[TOOL_SIZE_THICK] = 12;
     thickness[TOOL_SIZE_VERY_THICK] = 18;
     tools[TOOL_ERASER - TOOL_PEN] =
-            std::make_unique<Tool>("eraser", TOOL_ERASER, Color{0x000000U}, TOOL_CAP_SIZE, thickness);
+            std::make_unique<Tool>("eraser", TOOL_ERASER, Colors::black, TOOL_CAP_SIZE, thickness);
 
     // highlighter thicknesses = 1, 3, 7 mm
     thickness[TOOL_SIZE_VERY_FINE] = 1;
@@ -51,52 +61,63 @@ void ToolHandler::initTools() {
     thickness[TOOL_SIZE_THICK] = 19.84;
     thickness[TOOL_SIZE_VERY_THICK] = 30;
     tools[TOOL_HIGHLIGHTER - TOOL_PEN] = std::make_unique<Tool>(
-            "highlighter", TOOL_HIGHLIGHTER, Color{0xFFFF00U},
+            "highlighter", TOOL_HIGHLIGHTER, Colors::yellow,
             TOOL_CAP_COLOR | TOOL_CAP_SIZE | TOOL_CAP_RULER | TOOL_CAP_RECTANGLE | TOOL_CAP_ELLIPSE | TOOL_CAP_ARROW |
-                    TOOL_CAP_SPLINE | TOOL_CAP_RECOGNIZER | TOOL_CAP_FILL,
+                    TOOL_CAP_DOUBLE_ARROW | TOOL_CAP_SPLINE | TOOL_CAP_RECOGNIZER | TOOL_CAP_FILL,
             thickness);
 
     tools[TOOL_TEXT - TOOL_PEN] =
-            std::make_unique<Tool>("text", TOOL_TEXT, Color{0x000000U}, TOOL_CAP_COLOR, std::nullopt);
+            std::make_unique<Tool>("text", TOOL_TEXT, Colors::black, TOOL_CAP_COLOR, std::nullopt);
 
     tools[TOOL_IMAGE - TOOL_PEN] =
-            std::make_unique<Tool>("image", TOOL_IMAGE, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("image", TOOL_IMAGE, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_SELECT_RECT - TOOL_PEN] =
-            std::make_unique<Tool>("selectRect", TOOL_SELECT_RECT, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectRect", TOOL_SELECT_RECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_SELECT_REGION - TOOL_PEN] =
-            std::make_unique<Tool>("selectRegion", TOOL_SELECT_REGION, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectRegion", TOOL_SELECT_REGION, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_SELECT_OBJECT - TOOL_PEN] =
-            std::make_unique<Tool>("selectObject", TOOL_SELECT_OBJECT, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("selectObject", TOOL_SELECT_OBJECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_VERTICAL_SPACE - TOOL_PEN] =
-            std::make_unique<Tool>("verticalSpace", TOOL_VERTICAL_SPACE, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("verticalSpace", TOOL_VERTICAL_SPACE, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_HAND - TOOL_PEN] =
-            std::make_unique<Tool>("hand", TOOL_HAND, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("hand", TOOL_HAND, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_PLAY_OBJECT - TOOL_PEN] =
-            std::make_unique<Tool>("playObject", TOOL_PLAY_OBJECT, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("playObject", TOOL_PLAY_OBJECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_DRAW_RECT - TOOL_PEN] =
-            std::make_unique<Tool>("drawRect", TOOL_DRAW_RECT, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawRect", TOOL_DRAW_RECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_DRAW_ELLIPSE - TOOL_PEN] =
-            std::make_unique<Tool>("drawEllipse", TOOL_DRAW_ELLIPSE, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawEllipse", TOOL_DRAW_ELLIPSE, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_DRAW_ARROW - TOOL_PEN] =
-            std::make_unique<Tool>("drawArrow", TOOL_DRAW_ARROW, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawArrow", TOOL_DRAW_ARROW, Colors::black, TOOL_CAP_NONE, std::nullopt);
+
+    tools[TOOL_DRAW_DOUBLE_ARROW - TOOL_PEN] = std::make_unique<Tool>("drawDoubleArrow", TOOL_DRAW_DOUBLE_ARROW,
+                                                                      Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_DRAW_COORDINATE_SYSTEM - TOOL_PEN] = std::make_unique<Tool>(
-            "drawCoordinateSystem", TOOL_DRAW_COORDINATE_SYSTEM, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            "drawCoordinateSystem", TOOL_DRAW_COORDINATE_SYSTEM, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_DRAW_SPLINE - TOOL_PEN] =
-            std::make_unique<Tool>("drawSpline", TOOL_DRAW_SPLINE, Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+            std::make_unique<Tool>("drawSpline", TOOL_DRAW_SPLINE, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_FLOATING_TOOLBOX - TOOL_PEN] = std::make_unique<Tool>("showFloatingToolbox", TOOL_FLOATING_TOOLBOX,
-                                                                     Color{0x000000U}, TOOL_CAP_NONE, std::nullopt);
+                                                                     Colors::black, TOOL_CAP_NONE, std::nullopt);
+
+    tools[TOOL_SELECT_PDF_TEXT_LINEAR - TOOL_PEN] =
+            std::make_unique<Tool>("selectPdfTextLinear", TOOL_SELECT_PDF_TEXT_LINEAR, Colors::black,
+                                   TOOL_CAP_COLOR | TOOL_CAP_RULER, std::nullopt);
+
+    tools[TOOL_SELECT_PDF_TEXT_RECT - TOOL_PEN] =
+            std::make_unique<Tool>("selectPdfTextRect", TOOL_SELECT_PDF_TEXT_RECT, Colors::black,
+                                   TOOL_CAP_COLOR | TOOL_CAP_RULER, std::nullopt);
 
     this->eraserButtonTool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
     this->stylusButton1Tool = std::make_unique<Tool>(*tools[TOOL_HIGHLIGHTER - TOOL_PEN]);
@@ -147,7 +168,7 @@ void ToolHandler::eraserTypeChanged() {
     }
 }
 
-auto ToolHandler::getEraserType() -> EraserType {
+auto ToolHandler::getEraserType() const -> EraserType {
     // if active tool is eraser get its type
     if (this->activeTool->type == TOOL_ERASER)
         return this->activeTool->getEraserType();
@@ -167,7 +188,7 @@ void ToolHandler::selectTool(ToolType type) {
     this->activeTool = this->toolbarSelectedTool;
 }
 
-void ToolHandler::fireToolChanged() {
+void ToolHandler::fireToolChanged() const {
     for (auto&& listener: this->toolChangeListeners) { listener(this->activeTool->type); }
 
     stateChangeListener->toolChanged();
@@ -177,33 +198,35 @@ void ToolHandler::addToolChangedListener(ToolChangedCallback listener) {
     toolChangeListeners.emplace_back(std::move(listener));
 }
 
-auto ToolHandler::getTool(ToolType type) -> Tool& { return *(this->tools[type - TOOL_PEN]); }
+auto ToolHandler::getTool(ToolType type) const -> Tool& { return *(this->tools[type - TOOL_PEN]); }
 
-auto ToolHandler::getToolType() -> ToolType {
+auto ToolHandler::getActiveTool() const -> Tool* {return this->activeTool; }
+
+auto ToolHandler::getToolType() const -> ToolType {
     Tool* tool = this->activeTool;
     return tool->type;
 }
 
-auto ToolHandler::hasCapability(ToolCapabilities cap, SelectedTool selectedTool) -> bool {
+auto ToolHandler::hasCapability(ToolCapabilities cap, SelectedTool selectedTool) const -> bool {
     Tool* tool = getSelectedTool(selectedTool);
     return (tool->capabilities & cap) != 0;
 }
 
-auto ToolHandler::isDrawingTool() -> bool {
+auto ToolHandler::isDrawingTool() const -> bool {
     Tool* tool = this->activeTool;
     return tool->isDrawingTool();
 }
 
-auto ToolHandler::getSize(SelectedTool selectedTool) -> ToolSize {
+auto ToolHandler::getSize(SelectedTool selectedTool) const -> ToolSize {
     Tool* tool = getSelectedTool(selectedTool);
     return tool->getSize();
 }
 
-auto ToolHandler::getPenSize() -> ToolSize { return tools[TOOL_PEN - TOOL_PEN]->getSize(); }
+auto ToolHandler::getPenSize() const -> ToolSize { return tools[TOOL_PEN - TOOL_PEN]->getSize(); }
 
-auto ToolHandler::getEraserSize() -> ToolSize { return tools[TOOL_ERASER - TOOL_PEN]->getSize(); }
+auto ToolHandler::getEraserSize() const -> ToolSize { return tools[TOOL_ERASER - TOOL_PEN]->getSize(); }
 
-auto ToolHandler::getHighlighterSize() -> ToolSize { return tools[TOOL_HIGHLIGHTER - TOOL_PEN]->getSize(); }
+auto ToolHandler::getHighlighterSize() const -> ToolSize { return tools[TOOL_HIGHLIGHTER - TOOL_PEN]->getSize(); }
 
 void ToolHandler::setPenSize(ToolSize size) {
     this->tools[TOOL_PEN - TOOL_PEN]->setSize(size);
@@ -237,11 +260,11 @@ void ToolHandler::setPenFillEnabled(bool fill, bool fireEvent) {
     }
 }
 
-auto ToolHandler::getPenFillEnabled() -> bool { return this->tools[TOOL_PEN - TOOL_PEN]->getFill(); }
+auto ToolHandler::getPenFillEnabled() const -> bool { return this->tools[TOOL_PEN - TOOL_PEN]->getFill(); }
 
 void ToolHandler::setPenFill(int alpha) { this->tools[TOOL_PEN - TOOL_PEN]->setFillAlpha(alpha); }
 
-auto ToolHandler::getPenFill() -> int { return this->tools[TOOL_PEN - TOOL_PEN]->getFillAlpha(); }
+auto ToolHandler::getPenFill() const -> int { return this->tools[TOOL_PEN - TOOL_PEN]->getFillAlpha(); }
 
 void ToolHandler::setHighlighterFillEnabled(bool fill, bool fireEvent) {
     this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->setFill(fill);
@@ -251,13 +274,15 @@ void ToolHandler::setHighlighterFillEnabled(bool fill, bool fireEvent) {
     }
 }
 
-auto ToolHandler::getHighlighterFillEnabled() -> bool { return this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->getFill(); }
+auto ToolHandler::getHighlighterFillEnabled() const -> bool {
+    return this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->getFill();
+}
 
 void ToolHandler::setHighlighterFill(int alpha) { this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->setFillAlpha(alpha); }
 
-auto ToolHandler::getHighlighterFill() -> int { return this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->getFillAlpha(); }
+auto ToolHandler::getHighlighterFill() const -> int { return this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->getFillAlpha(); }
 
-auto ToolHandler::getThickness() -> double {
+auto ToolHandler::getThickness() const -> double {
     Tool* tool = this->activeTool;
     if (tool->thickness) {
         return tool->thickness.value()[tool->getSize()];
@@ -311,7 +336,7 @@ void ToolHandler::setButtonColor(Color color, Button button) {
     this->stateChangeListener->setCustomColorSelected();
 }
 
-auto ToolHandler::getColor() -> Color {
+auto ToolHandler::getColor() const -> Color {
     Tool* tool = this->activeTool;
     return tool->getColor();
 }
@@ -319,7 +344,7 @@ auto ToolHandler::getColor() -> Color {
 /**
  * @return -1 if fill is disabled, else the fill alpha value
  */
-auto ToolHandler::getFill() -> int {
+auto ToolHandler::getFill() const -> int {
     Tool* tool = this->activeTool;
     if (!tool->getFill()) {
         return -1;
@@ -327,12 +352,12 @@ auto ToolHandler::getFill() -> int {
     return tool->getFillAlpha();
 }
 
-auto ToolHandler::getLineStyle() -> const LineStyle& {
+auto ToolHandler::getLineStyle() const -> const LineStyle& {
     Tool* tool = this->activeTool;
     return tool->getLineStyle();
 }
 
-auto ToolHandler::getDrawingType(SelectedTool selectedTool) -> DrawingType {
+auto ToolHandler::getDrawingType(SelectedTool selectedTool) const -> DrawingType {
     Tool* tool = getSelectedTool(selectedTool);
     return tool->getDrawingType();
 }
@@ -349,7 +374,7 @@ void ToolHandler::setButtonDrawingType(DrawingType drawingType, Button button) {
 
 auto ToolHandler::getTools() const -> std::array<std::unique_ptr<Tool>, TOOL_COUNT> const& { return tools; }
 
-void ToolHandler::saveSettings() {
+void ToolHandler::saveSettings() const {
     SElement& s = settings->getCustomElement("tools");
     s.clear();
 
@@ -498,20 +523,21 @@ bool ToolHandler::pointActiveToolToToolbarTool() {
     return true;
 }
 
-auto ToolHandler::getToolThickness(ToolType type) -> const double* {
+auto ToolHandler::getToolThickness(ToolType type) const -> const double* {
     return this->tools[type - TOOL_PEN]->thickness.value().data();
 }
 
 /**
  * Change the selection tools capabilities, depending on the selected elements
  */
-void ToolHandler::setSelectionEditTools(bool setColor, bool setSize, bool setFill) {
+void ToolHandler::setSelectionEditTools(bool setColor, bool setSize, bool setFill, bool setLineStyle) {
     // For all selection tools, apply the features
     for (size_t i = TOOL_SELECT_RECT - TOOL_PEN; i <= TOOL_SELECT_OBJECT - TOOL_PEN; i++) {
         Tool* t = tools[i].get();
         t->setCapability(TOOL_CAP_COLOR, setColor);
         t->setCapability(TOOL_CAP_SIZE, setSize);
         t->setCapability(TOOL_CAP_FILL, setFill);
+        t->setCapability(TOOL_CAP_LINE_STYLE, setLineStyle);
         t->setSize(TOOL_SIZE_NONE);
         t->setColor(Color(-1));
         t->setFill(false);
@@ -522,25 +548,28 @@ void ToolHandler::setSelectionEditTools(bool setColor, bool setSize, bool setFil
         this->stateChangeListener->toolColorChanged();
         this->stateChangeListener->toolSizeChanged();
         this->stateChangeListener->toolFillChanged();
+        this->stateChangeListener->toolLineStyleChanged();
         this->fireToolChanged();
     }
 }
 
-auto ToolHandler::isSinglePageTool() -> bool {
+auto ToolHandler::isSinglePageTool() const -> bool {
     ToolType toolType = this->getToolType();
     DrawingType drawingType = this->getDrawingType();
 
-    return toolType == (TOOL_PEN && (drawingType == DRAWING_TYPE_ARROW || drawingType == DRAWING_TYPE_ELLIPSE ||
-                                     drawingType == DRAWING_TYPE_COORDINATE_SYSTEM ||
-                                     drawingType == DRAWING_TYPE_LINE || drawingType == DRAWING_TYPE_RECTANGLE)) ||
-           drawingType == DRAWING_TYPE_SPLINE || toolType == TOOL_SELECT_REGION || toolType == TOOL_SELECT_RECT ||
-           toolType == TOOL_SELECT_OBJECT || toolType == TOOL_DRAW_RECT || toolType == TOOL_DRAW_ELLIPSE ||
-           toolType == TOOL_DRAW_COORDINATE_SYSTEM || toolType == TOOL_DRAW_ARROW ||
-           toolType == TOOL_FLOATING_TOOLBOX || toolType == TOOL_DRAW_SPLINE;
+    return ((toolType == TOOL_PEN || toolType == TOOL_HIGHLIGHTER) &&
+            (drawingType == DRAWING_TYPE_ARROW || drawingType == DRAWING_TYPE_DOUBLE_ARROW ||
+             drawingType == DRAWING_TYPE_ELLIPSE || drawingType == DRAWING_TYPE_COORDINATE_SYSTEM ||
+             drawingType == DRAWING_TYPE_LINE || drawingType == DRAWING_TYPE_RECTANGLE ||
+             drawingType == DRAWING_TYPE_SPLINE)) ||
+           toolType == TOOL_SELECT_REGION || toolType == TOOL_SELECT_RECT || toolType == TOOL_SELECT_OBJECT ||
+           toolType == TOOL_DRAW_RECT || toolType == TOOL_DRAW_ELLIPSE || toolType == TOOL_DRAW_COORDINATE_SYSTEM ||
+           toolType == TOOL_DRAW_ARROW || toolType == TOOL_DRAW_DOUBLE_ARROW || toolType == TOOL_FLOATING_TOOLBOX ||
+           toolType == TOOL_DRAW_SPLINE || toolType == TOOL_SELECT_PDF_TEXT_LINEAR ||
+           toolType == TOOL_SELECT_PDF_TEXT_RECT;
 }
 
-
-auto ToolHandler::getSelectedTool(SelectedTool selectedTool) -> Tool* {
+auto ToolHandler::getSelectedTool(SelectedTool selectedTool) const -> Tool* {
     switch (selectedTool) {
         case SelectedTool::active:
             return this->activeTool;
@@ -551,7 +580,7 @@ auto ToolHandler::getSelectedTool(SelectedTool selectedTool) -> Tool* {
     }
 }
 
-auto ToolHandler::getButtonTool(Button button) -> Tool* {
+auto ToolHandler::getButtonTool(Button button) const -> Tool* {
     switch (button) {
         case Button::BUTTON_ERASER:
             return this->eraserButtonTool.get();

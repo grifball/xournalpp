@@ -11,23 +11,26 @@
 
 #pragma once
 
-#include "UndoAction.h"
+#include <string>  // for string
+
+#include "model/PageRef.h"  // for PageRef
+
+#include "UndoAction.h"  // for UndoAction
 
 class Element;
 class Layer;
-class Redrawable;
-class XojPage;
+class Control;
 
 class TextBoxUndoAction: public UndoAction {
 public:
     TextBoxUndoAction(const PageRef& page, Layer* layer, Element* element, Element* oldelement);
-    virtual ~TextBoxUndoAction();
+    ~TextBoxUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
     Layer* layer;

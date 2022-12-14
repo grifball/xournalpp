@@ -11,15 +11,19 @@
 
 #pragma once
 
-#include "Attribute.h"
+#include <string>  // for string
+
+#include "Attribute.h"  // for XMLAttribute
+
+class OutputStream;
 
 class TextAttribute: public XMLAttribute {
 public:
     TextAttribute(std::string name, std::string value);
-    virtual ~TextAttribute();
+    ~TextAttribute() override;
 
 public:
-    virtual void writeOut(OutputStream* out);
+    void writeOut(OutputStream* out) override;
 
 private:
     std::string value;

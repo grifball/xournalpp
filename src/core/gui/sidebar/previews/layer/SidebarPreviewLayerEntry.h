@@ -11,32 +11,38 @@
 
 #pragma once
 
-#include "gui/sidebar/previews/base/SidebarPreviewBaseEntry.h"
-#include "model/PageRef.h"
+#include <cstddef>  // for size_t
+#include <string>   // for string
 
-class SidebarPreviewBase;
+#include <gtk/gtk.h>  // for GtkWi...
+
+#include "gui/sidebar/previews/base/SidebarPreviewBaseEntry.h"  // for Previ...
+#include "model/Layer.h"                                        // for Layer
+#include "model/PageRef.h"                                      // for PageRef
+
+class SidebarPreviewLayers;
 
 class SidebarPreviewLayerEntry: public SidebarPreviewBaseEntry {
 public:
-    SidebarPreviewLayerEntry(SidebarPreviewBase* sidebar, const PageRef& page, int layer, const std::string& layerName,
-                             size_t index, bool stacked);
-    virtual ~SidebarPreviewLayerEntry();
+    SidebarPreviewLayerEntry(SidebarPreviewLayers* sidebar, const PageRef& page, Layer::Index layerId,
+                             const std::string& layerName, size_t index, bool stacked);
+    ~SidebarPreviewLayerEntry() override;
 
 public:
-    virtual int getHeight();
+    int getHeight() override;
 
     /**
      * @return What should be rendered
      * @override
      */
-    virtual PreviewRenderType getRenderType();
+    PreviewRenderType getRenderType() override;
 
     /**
      * @return The layer to be rendered
      */
-    int getLayer() const;
+    Layer::Index getLayer() const;
 
-    virtual GtkWidget* getWidget();
+    GtkWidget* getWidget() override;
 
     /**
      * Set the value of the visible checkbox
@@ -44,8 +50,10 @@ public:
     void setVisibleCheckbox(bool enabled);
 
 protected:
-    virtual void mouseButtonPressCallback();
+    void mouseButtonPressCallback() override;
     void checkboxToggled();
+
+    SidebarPreviewLayers* sidebar;
 
 private:
     /**
@@ -56,7 +64,7 @@ private:
     /**
      * Layer to render
      */
-    int layer;
+    Layer::Index layerId;
 
     /**
      * Toolbar with controls

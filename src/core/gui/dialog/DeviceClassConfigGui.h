@@ -11,26 +11,25 @@
 
 #pragma once
 
-#include <gdk/gdk.h>
+#include <gtk/gtk.h>  // for GtkWidget, GtkComboBox, GtkWindow
 
-#include "control/Actions.h"
-#include "control/DeviceListHelper.h"
-#include "gui/GladeGui.h"
+#include "control/DeviceListHelper.h"  // for InputDevice
+#include "gui/GladeGui.h"              // for GladeGui
 
 class Settings;
-class SettingsDialog;
+class GladeSearchpath;
 
 class DeviceClassConfigGui: public GladeGui {
 public:
     DeviceClassConfigGui(GladeSearchpath* gladeSearchPath, GtkWidget* w, Settings* settings, const InputDevice& device);
-    virtual ~DeviceClassConfigGui();
+    ~DeviceClassConfigGui() override;
 
 public:
     void loadSettings();
     void saveSettings();
 
     // Not implemented! This is not a dialog!
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
 private:
     static void cbSelectCallback(GtkComboBox* widget, DeviceClassConfigGui* gui);

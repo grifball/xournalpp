@@ -1,18 +1,31 @@
 #include "XojCairoPdfExport.h"
 
-#include <map>
-#include <sstream>
-#include <stack>
+#include <algorithm>  // for copy, min
+#include <map>        // for map
+#include <memory>     // for __shared_ptr_access
+#include <sstream>    // for ostringstream, operator<<
+#include <stack>      // for stack
+#include <utility>    // for pair, make_pair
+#include <vector>     // for vector
 
-#include <cairo-pdf.h>
-#include <config.h>
+#include <cairo-pdf.h>    // for cairo_pdf_surface_set_met...
+#include <glib-object.h>  // for g_object_unref
 
-#include "util/Util.h"
-#include "util/i18n.h"
-#include "util/serdesstream.h"
-#include "view/DocumentView.h"
+#include "control/jobs/ProgressListener.h"  // for ProgressListener
+#include "model/Document.h"                 // for Document
+#include "model/Layer.h"                    // for Layer
+#include "model/LinkDestination.h"          // for LinkDestination, XojLinkDest
+#include "model/PageRef.h"                  // for PageRef
+#include "model/PageType.h"                 // for PageType
+#include "model/XojPage.h"                  // for XojPage
+#include "pdf/base/XojPdfPage.h"            // for XojPdfPageSPtr, XojPdfPage
+#include "util/Util.h"                      // for npos
+#include "util/i18n.h"                      // for _
+#include "util/serdesstream.h"              // for serdes_stream
+#include "view/DocumentView.h"              // for DocumentView
 
-#include "filesystem.h"
+#include "config.h"      // for PROJECT_STRING
+#include "filesystem.h"  // for path
 
 XojCairoPdfExport::XojCairoPdfExport(Document* doc, ProgressListener* progressListener):
         doc(doc), progressListener(progressListener) {}
@@ -109,15 +122,23 @@ void XojCairoPdfExport::exportPage(size_t page) {
     DocumentView view;
 
     cairo_save(this->cr);
-    if (p->getBackgroundType().isPdfPage() && (exportBackground >= EXPORT_BACKGROUND_UNRULED)) {
-        int pgNo = p->getPdfPageNr();
+
+    // For a better pdf quality, we use a dedicated pdf rendering
+    if (p->getBackgroundType().isPdfPage() && (exportBackground != EXPORT_BACKGROUND_NONE)) {
+        auto pgNo = p->getPdfPageNr();
         XojPdfPageSPtr popplerPage = doc->getPdfPage(pgNo);
 
-        popplerPage->render(cr, true);
+        popplerPage->renderForPrinting(cr);
     }
 
-    view.drawPage(p, this->cr, true /* dont render eraseable */, exportBackground == EXPORT_BACKGROUND_NONE,
-                  exportBackground == EXPORT_BACKGROUND_NONE, exportBackground <= EXPORT_BACKGROUND_UNRULED);
+    if (layerRange) {
+        view.drawLayersOfPage(*layerRange, p, this->cr, true /* dont render eraseable */,
+                              true /* don't rerender the pdf background */, exportBackground == EXPORT_BACKGROUND_NONE,
+                              exportBackground <= EXPORT_BACKGROUND_UNRULED);
+    } else {
+        view.drawPage(p, this->cr, true /* dont render eraseable */, true /* don't rerender the pdf background */,
+                      exportBackground == EXPORT_BACKGROUND_NONE, exportBackground <= EXPORT_BACKGROUND_UNRULED);
+    }
 
     // next page
     cairo_show_page(this->cr);
@@ -146,7 +167,7 @@ void XojCairoPdfExport::exportPageLayers(size_t page) {
     for (const auto& layer: *p->getLayers()) layer->setVisible(initialVisibility[layer]);
 }
 
-auto XojCairoPdfExport::createPdf(fs::path const& file, PageRangeVector& range, bool progressiveMode) -> bool {
+auto XojCairoPdfExport::createPdf(fs::path const& file, const PageRangeVector& range, bool progressiveMode) -> bool {
     if (range.empty()) {
         this->lastError = _("No pages to export!");
         return false;
@@ -159,20 +180,17 @@ auto XojCairoPdfExport::createPdf(fs::path const& file, PageRangeVector& range, 
         return false;
     }
 
-    int count = 0;
-    for (PageRangeEntry* e: range) { count += e->getLast() - e->getFirst() + 1; }
+    size_t count = 0;
+    for (const auto& e: range) { count += e.last - e.first + 1; }
 
     if (this->progressListener) {
         this->progressListener->setMaximumState(count);
     }
 
-    int c = 0;
-    for (PageRangeEntry* e: range) {
-        for (int i = e->getFirst(); i <= e->getLast(); i++) {
-            if (i < 0 || i >= static_cast<int>(doc->getPageCount())) {
-                continue;
-            }
-
+    size_t c = 0;
+    for (const auto& e: range) {
+        auto max = std::min(e.last, doc->getPageCount());
+        for (size_t i = e.first; i <= max; i++) {
             if (progressiveMode) {
                 exportPageLayers(i);
             } else {
@@ -202,13 +220,12 @@ auto XojCairoPdfExport::createPdf(fs::path const& file, bool progressiveMode) ->
         return false;
     }
 
-    int count = doc->getPageCount();
+    auto count = doc->getPageCount();
     if (this->progressListener) {
         this->progressListener->setMaximumState(count);
     }
 
-    for (int i = 0; i < count; i++) {
-
+    for (decltype(count) i = 0; i < count; i++) {
         if (progressiveMode) {
             exportPageLayers(i);
         } else {
@@ -225,3 +242,11 @@ auto XojCairoPdfExport::createPdf(fs::path const& file, bool progressiveMode) ->
 }
 
 auto XojCairoPdfExport::getLastError() -> std::string { return lastError; }
+
+void XojCairoPdfExport::setLayerRange(const char* rangeStr) {
+    if (rangeStr) {
+        // Use no upper bound for layer indices, as the maximal value can vary between pages
+        layerRange =
+                std::make_unique<LayerRangeVector>(ElementRange::parse(rangeStr, std::numeric_limits<size_t>::max()));
+    }
+}

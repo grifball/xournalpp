@@ -4,17 +4,32 @@
 
 #include "AbstractInputHandler.h"
 
-#include "gui/XournalppCursor.h"
+#include <cmath>  // for round
 
-#include "InputContext.h"
+#include <glib.h>  // for gdouble, g_assert
+
+#include "control/settings/Settings.h"           // for Settings
+#include "gui/Layout.h"                          // for Layout
+#include "gui/PageView.h"                        // for XojPageView
+#include "gui/XournalView.h"                     // for XournalView
+#include "gui/XournalppCursor.h"                 // for XournalppCursor
+#include "gui/inputdevices/InputEvents.h"        // for InputEvent
+#include "gui/inputdevices/PositionInputData.h"  // for PositionInputData
+#include "gui/widgets/XournalWidget.h"           // for GtkXournal
+#include "model/Point.h"                         // for Point, Point::NO_PRE...
+
+#include "InputContext.h"  // for InputContext
 
 AbstractInputHandler::AbstractInputHandler(InputContext* inputContext) { this->inputContext = inputContext; }
 
 AbstractInputHandler::~AbstractInputHandler() = default;
 
 void AbstractInputHandler::block(bool block) {
+    if (block == this->blocked) {
+        return;
+    }
     this->blocked = block;
-    if (!block) {
+    if (!this->blocked) {
         this->onUnblock();
     } else {
         this->onBlock();
@@ -41,13 +56,10 @@ auto AbstractInputHandler::getPageAtCurrentPosition(InputEvent const& event) -> 
         return nullptr;
     }
 
-    gdouble eventX = event.relativeX;
-    gdouble eventY = event.relativeY;
-
     GtkXournal* xournal = this->inputContext->getXournal();
 
-    double x = eventX + xournal->x;
-    double y = eventY + xournal->y;
+    int x = static_cast<int>(std::round(event.relativeX));
+    int y = static_cast<int>(std::round(event.relativeY));
 
     return xournal->layout->getPageViewAt(x, y);
 }
@@ -58,14 +70,13 @@ auto AbstractInputHandler::getPageAtCurrentPosition(InputEvent const& event) -> 
 auto AbstractInputHandler::getInputDataRelativeToCurrentPage(XojPageView* page, InputEvent const& event)
         -> PositionInputData {
     g_assert(page != nullptr);
-    GtkXournal* xournal = inputContext->getXournal();
 
     gdouble eventX = event.relativeX;
     gdouble eventY = event.relativeY;
 
     PositionInputData pos = {};
-    pos.x = eventX - page->getX() - xournal->x;
-    pos.y = eventY - page->getY() - xournal->y;
+    pos.x = eventX - static_cast<double>(page->getX());
+    pos.y = eventY - static_cast<double>(page->getY());
     pos.pressure = Point::NO_PRESSURE;
 
     if (this->inputContext->getSettings()->isPressureSensitivity()) {

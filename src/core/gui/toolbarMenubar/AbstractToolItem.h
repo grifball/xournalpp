@@ -11,15 +11,30 @@
 
 #pragma once
 
-#include "AbstractItem.h"
+#include <string>  // for string
+
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gtk/gtk.h>                // for GtkToolItem, GtkWidget, GtkToolB...
+
+#include "enums/ActionGroup.enum.h"  // for ActionGroup
+#include "enums/ActionType.enum.h"   // for ActionType
+
+#include "AbstractItem.h"  // for AbstractItem
+
+class ActionHandler;
 
 class AbstractToolItem: public AbstractItem {
 public:
     AbstractToolItem(std::string id, ActionHandler* handler, ActionType type, GtkWidget* menuitem = nullptr);
-    virtual ~AbstractToolItem();
+    ~AbstractToolItem() override;
+
+    AbstractToolItem(AbstractToolItem const&) = delete;
+    auto operator=(AbstractToolItem const&) -> AbstractToolItem& = delete;
+    AbstractToolItem(AbstractToolItem&&) = delete;                     // Implement if desired
+    auto operator=(AbstractToolItem&&) -> AbstractToolItem& = delete;  // Implement if desired
 
 public:
-    virtual void selected(ActionGroup group, ActionType action);
+    void selected(ActionGroup group, ActionType action) override;
     virtual GtkToolItem* createItem(bool horizontal);
     virtual GtkToolItem* createTmpItem(bool horizontal);
     void setPopupMenu(GtkWidget* popupMenu);
@@ -50,7 +65,9 @@ public:
     /**
      * Enable / Disable the tool item
      */
-    virtual void enable(bool enabled);
+    void enable(bool enabled) override;
+
+    GtkToolItem* getItem() const;
 
 protected:
     virtual GtkToolItem* newItem() = 0;

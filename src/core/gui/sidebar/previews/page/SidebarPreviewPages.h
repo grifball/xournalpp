@@ -11,57 +11,65 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
+#include <string>   // for string
+#include <tuple>    // for tuple
+#include <vector>   // for vector
 
-#include "gui/IconNameHelper.h"
-#include "gui/sidebar/previews/base/SidebarPreviewBase.h"
+#include <glib.h>     // for gulong
+#include <gtk/gtk.h>  // for GtkWidget
+
+#include "gui/IconNameHelper.h"                            // for IconNameHe...
+#include "gui/sidebar/previews/base/SidebarPreviewBase.h"  // for SidebarPre...
+#include "gui/sidebar/previews/base/SidebarToolbar.h"      // for SidebarAct...
+
+class Control;
+class GladeGui;
 
 
 class SidebarPreviewPages: public SidebarPreviewBase {
 public:
     SidebarPreviewPages(Control* control, GladeGui* gui, SidebarToolbar* toolbar);
-    virtual ~SidebarPreviewPages();
+    ~SidebarPreviewPages() override;
 
 public:
     /**
      * Called when an action is performed
      */
-    void actionPerformed(SidebarActions action);
+    void actionPerformed(SidebarActions action) override;
 
-    void enableSidebar();
-
-    /**
-     * @overwrite
-     */
-    virtual std::string getName();
+    void enableSidebar() override;
 
     /**
      * @overwrite
      */
-    virtual std::string getIconName();
+    std::string getName() override;
+
+    /**
+     * @overwrite
+     */
+    std::string getIconName() override;
 
     /**
      * Update the preview images
      * @overwrite
      */
-    virtual void updatePreviews();
+    void updatePreviews() override;
 
     /**
      * Opens the page preview context menu, at the current cursor position, for
      * the given page.
      */
-    void openPreviewContextMenu();
+    void openPreviewContextMenu() override;
 
 public:
     // DocumentListener interface (only the part which is not handled by SidebarPreviewBase)
-    virtual void pageSizeChanged(size_t page);
-    virtual void pageChanged(size_t page);
-    virtual void pageSelected(size_t page);
-    virtual void pageInserted(size_t page);
-    virtual void pageDeleted(size_t page);
+    void pageSizeChanged(size_t page) override;
+    void pageChanged(size_t page) override;
+    void pageSelected(size_t page) override;
+    void pageInserted(size_t page) override;
+    void pageDeleted(size_t page) override;
 
 private:
     /**

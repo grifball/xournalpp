@@ -11,11 +11,9 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "Job.h"
-
+#include "Job.h"  // for Job, JobType
 
 class Control;
 
@@ -24,13 +22,13 @@ public:
     AutosaveJob(Control* control);
 
 protected:
-    virtual ~AutosaveJob();
+    ~AutosaveJob() override;
 
 public:
-    virtual void run();
-    void afterRun();
+    void run() override;
+    void afterRun() override;
 
-    virtual JobType getType();
+    JobType getType() override;
 
 private:
     Control* control = nullptr;

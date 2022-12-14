@@ -11,26 +11,23 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <poppler.h>  // for PopplerDocument, Popple...
 
-#include <poppler.h>
+#include "pdf/base/XojPdfBookmarkIterator.h"  // for XojPdfBookmarkIterator
 
-#include "pdf/base/XojPdfBookmarkIterator.h"
-
-#include "PopplerGlibAction.h"
+class XojPdfAction;
 
 
 class PopplerGlibPageBookmarkIterator: public XojPdfBookmarkIterator {
 public:
     PopplerGlibPageBookmarkIterator(PopplerIndexIter* iter, PopplerDocument* document);
-    virtual ~PopplerGlibPageBookmarkIterator();
+    ~PopplerGlibPageBookmarkIterator() override;
 
 public:
-    virtual bool next();
-    virtual bool isOpen();
-    virtual XojPdfBookmarkIterator* getChildIter();
-    virtual XojPdfAction* getAction();
+    bool next() override;
+    bool isOpen() override;
+    XojPdfBookmarkIterator* getChildIter() override;
+    XojPdfAction* getAction() override;
 
 private:
     PopplerIndexIter* iter;

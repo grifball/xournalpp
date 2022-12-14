@@ -11,38 +11,44 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "gui/GladeGui.h"
-#include "model/Font.h"
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gdk/gdk.h>                // for GdkEvent
+#include <gtk/gtk.h>                // for GtkWidget, GtkToolItem, GtkMenuItem
 
-#include "AbstractToolItem.h"
+#include "enums/ActionType.enum.h"  // for ActionType
+#include "model/Font.h"             // for XojFont
+
+#include "AbstractToolItem.h"  // for AbstractToolItem
+
+class ActionHandler;
+class GladeGui;
 
 
 class FontButton: public AbstractToolItem {
 public:
     FontButton(ActionHandler* handler, GladeGui* gui, std::string id, ActionType type, std::string description,
                GtkWidget* menuitem = nullptr);
-    virtual ~FontButton();
+    ~FontButton() override;
 
 public:
-    virtual void activated(GdkEvent* event, GtkMenuItem* menuitem, GtkToolButton* toolbutton);
+    void activated(GtkMenuItem* menuitem, GtkToolButton* toolbutton) override;
     void setFont(XojFont& font);
     XojFont getFont() const;
-    virtual std::string getToolDisplayName() const;
+    std::string getToolDisplayName() const override;
     void showFontDialog();
 
 protected:
-    virtual GtkToolItem* createItem(bool horizontal);
-    virtual GtkToolItem* createTmpItem(bool horizontal);
-    virtual GtkToolItem* newItem();
+    GtkToolItem* createItem(bool horizontal) override;
+    GtkToolItem* createTmpItem(bool horizontal) override;
+    GtkToolItem* newItem() override;
 
     static GtkWidget* newFontButton();
     static void setFontFontButton(GtkWidget* fontButton, XojFont& font);
 
-    virtual GtkWidget* getNewToolIcon() const;
-    virtual GdkPixbuf* getNewToolPixbuf() const;
+    GtkWidget* getNewToolIcon() const override;
+    GdkPixbuf* getNewToolPixbuf() const override;
 
 private:
     GtkWidget* fontButton = nullptr;

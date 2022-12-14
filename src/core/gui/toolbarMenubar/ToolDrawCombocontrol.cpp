@@ -1,13 +1,16 @@
 #include "ToolDrawCombocontrol.h"
 
-#include <utility>
+#include <utility>  // for move
 
-#include <config.h>
+#include <glib.h>  // for g_warning
 
-#include "gui/widgets/gtkmenutooltogglebutton.h"
-#include "util/i18n.h"
+#include "gui/toolbarMenubar/ToolButton.h"        // for ToolButton
+#include "gui/widgets/gtkmenutooltogglebutton.h"  // for gtk_menu_tool_toggl...
+#include "util/i18n.h"                            // for _
 
-#include "ToolMenuHandler.h"
+#include "ToolMenuHandler.h"  // for ToolMenuHandler
+
+class ActionHandler;
 
 using std::string;
 
@@ -33,6 +36,8 @@ ToolDrawCombocontrol::ToolDrawCombocontrol(ToolMenuHandler* toolMenuHandler, Act
             new ToolDrawType(_("Draw Ellipse"), toolMenuHandler->iconName("draw-ellipse"), ACTION_TOOL_DRAW_ELLIPSE));
     drawTypes.push_back(
             new ToolDrawType(_("Draw Arrow"), toolMenuHandler->iconName("draw-arrow"), ACTION_TOOL_DRAW_ARROW));
+    drawTypes.push_back(new ToolDrawType(_("Draw Double Arrow"), toolMenuHandler->iconName("draw-double-arrow"),
+                                         ACTION_TOOL_DRAW_DOUBLE_ARROW));
     drawTypes.push_back(new ToolDrawType(_("Draw Line"), toolMenuHandler->iconName("draw-line"), ACTION_RULER));
     drawTypes.push_back(new ToolDrawType(_("Draw coordinate system"),
                                          toolMenuHandler->iconName("draw-coordinate-system"),

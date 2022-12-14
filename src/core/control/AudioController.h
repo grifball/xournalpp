@@ -11,37 +11,39 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <memory>   // for make_unique, unique_ptr
+#include <vector>   // for vector
 
-#include "audio/AudioPlayer.h"
-#include "audio/AudioRecorder.h"
-#include "control/settings/Settings.h"
-#include "gui/toolbarMenubar/ToolMenuHandler.h"
+#include <portaudiocpp/PortAudioCpp.hxx>  // for AutoSystem
 
-#include "Control.h"
-#include "filesystem.h"
+#include "filesystem.h"  // for path
 
 class AudioPlayer;
+class AudioRecorder;
+class Control;
+class DeviceInfo;
+class Settings;
 
 class AudioController final {
 public:
     // Todo convert Pointers to reference (changes to control.cpp are necessary)
-    AudioController(Settings* settings, Control* control): settings(*settings), control(*control) {}
+    AudioController(Settings* settings, Control* control);
+    ~AudioController();
 
     bool startRecording();
     bool stopRecording();
     bool isRecording();
 
     bool isPlaying();
-    bool startPlayback(const std::string& filename, unsigned int timestamp);
+    bool startPlayback(fs::path const& file, unsigned int timestamp);
     void pausePlayback();
     void continuePlayback();
     void stopPlayback();
     void seekForwards();
     void seekBackwards();
 
-    std::string const& getAudioFilename() const;
+    fs::path const& getAudioFilename() const;
     fs::path getAudioFolder() const;
     size_t getStartTime() const;
     std::vector<DeviceInfo> getOutputDevices() const;
@@ -56,9 +58,9 @@ private:
      * AudioRecorder and AudioPlayer
      * */
     portaudio::AutoSystem autoSys;
-    std::unique_ptr<AudioRecorder> audioRecorder = std::make_unique<AudioRecorder>(settings);
-    std::unique_ptr<AudioPlayer> audioPlayer = std::make_unique<AudioPlayer>(control, settings);
+    std::unique_ptr<AudioRecorder> audioRecorder;
+    std::unique_ptr<AudioPlayer> audioPlayer;
 
-    std::string audioFilename;
+    fs::path audioFilename;
     size_t timestamp = 0;
 };

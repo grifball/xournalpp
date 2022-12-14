@@ -12,13 +12,10 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include "model/LineStyle.h"  // for LineStyle
+#include "util/Color.h"       // for Color
 
-#include "model/LineStyle.h"
-#include "util/Color.h"
-
-#include "ToolEnums.h"
+#include "ToolEnums.h"  // for DrawingType, EraserType, ToolSize, DRAW...
 
 
 class ToolBase {
@@ -109,7 +106,7 @@ private:
     /**
      * Color of the tool for all drawing tools
      */
-    Color color{0x000000U};
+    Color color = Colors::black;
 
     /**
      * Size of a drawing tool

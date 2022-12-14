@@ -11,15 +11,19 @@
 
 #pragma once
 
-#include "control/pagetype/PageTypeMenu.h"
-#include "control/settings/PageTemplateSettings.h"
-#include "control/settings/Settings.h"
-#include "gui/GladeGui.h"
+#include <memory>  // for unique_ptr
+
+#include <gtk/gtk.h>  // for GtkWindow
+
+#include "control/pagetype/PageTypeMenu.h"          // for PageTypeMenu (ptr...
+#include "control/settings/PageTemplateSettings.h"  // for PageTemplateSettings
+#include "gui/GladeGui.h"                           // for GladeGui
 
 class PageTypeHandler;
-class PageTypeMenu;
 class PageTypeInfo;
 class PopupMenuButton;
+class GladeSearchpath;
+class Settings;
 
 class PageTemplateDialog: public GladeGui, public PageTypeMenuChangeListener {
 public:
@@ -28,17 +32,17 @@ public:
     PageTemplateDialog(PageTemplateDialog&&) = delete;
     PageTemplateDialog& operator=(PageTemplateDialog&) = delete;
     PageTemplateDialog&& operator=(PageTemplateDialog&&) = delete;
-    virtual ~PageTemplateDialog();
+    ~PageTemplateDialog() override;
 
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
     /**
      * The dialog was confirmed / saved
      */
     bool isSaved() const;
 
-    void changeCurrentPageBackground(PageTypeInfo* info);
+    void changeCurrentPageBackground(PageTypeInfo* info) override;
 
 private:
     void showPageSizeDialog();

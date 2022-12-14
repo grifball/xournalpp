@@ -11,11 +11,12 @@
  */
 
 #pragma once
-#include <string>
+#include <cstddef>  // for size_t
+#include <iosfwd>   // for istream
+#include <string>   // for string, basic_string
 
-#include "util/Color.h"
+#include "util/Color.h"  // for Color, ColorU16, ColorU8
 
-struct Palette;
 /**
  * @brief NamedColor is an object for a color with name and an optional index which refers to the index of the color
  * inside a given palette.
@@ -43,7 +44,7 @@ struct NamedColor {
      *
      * @param paletteIndex
      */
-    NamedColor(const size_t& paletteIndex);
+    explicit NamedColor(size_t paletteIndex);
 
     /**
      * @brief Construct a new NamedColor instance
@@ -53,7 +54,7 @@ struct NamedColor {
      *
      * @param color color to set for the custom NamedColor instance
      */
-    NamedColor(const Color& color);
+    explicit NamedColor(Color color);
 
     /**
      * @brief Input operator for parsing NamedColor from input string stream
@@ -62,35 +63,35 @@ struct NamedColor {
      * @param namedColor output for parsed NamedColor
      * @return std::istream& which is the rest of the input string stream after parsing
      */
-    friend std::istream& operator>>(std::istream& str, NamedColor& namedColor);
+    friend auto operator>>(std::istream& str, NamedColor& namedColor) -> std::istream&;
 
     /**
      * @brief Get the color formatted as ColorU16 object
      *
      * @return ColorU16
      */
-    ColorU16 getColorU16() const;
+    auto getColorU16() const -> ColorU16;
 
     /**
      * @brief Get the color formatted as Color object
      *
      * @return Color
      */
-    Color getColor() const;
+    auto getColor() const -> Color;
 
     /**
      * @brief Get the Index of the NamedColor inside the Palette
      *
      * @return size_t index
      */
-    size_t getIndex() const;
+    auto getIndex() const -> size_t;
 
     /**
      * @brief Get the Name of the NamedColor
      *
      * @return std::string name
      */
-    std::string getName() const;
+    auto getName() const -> std::string const&;
 
 private:
     /**

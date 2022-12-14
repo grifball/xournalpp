@@ -11,23 +11,28 @@
 
 #pragma once
 
-#include "model/BackgroundImage.h"
-#include "model/PageRef.h"
+#include <string>  // for string
 
-#include "UndoAction.h"
+#include "model/BackgroundImage.h"  // for BackgroundImage
+#include "model/PageRef.h"          // for PageRef
+#include "model/PageType.h"         // for PageType
+
+#include "UndoAction.h"  // for UndoAction
+
+class Control;
 
 
 class PageBackgroundChangedUndoAction: public UndoAction {
 public:
     PageBackgroundChangedUndoAction(const PageRef& page, const PageType& origType, int origPdfPage,
                                     BackgroundImage origBackgroundImage, double origW, double origH);
-    virtual ~PageBackgroundChangedUndoAction();
+    ~PageBackgroundChangedUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
     PageType origType;

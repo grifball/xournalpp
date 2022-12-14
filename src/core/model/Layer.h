@@ -11,10 +11,12 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>   // for size_t
+#include <optional>  // for optional
+#include <string>    // for string
+#include <vector>    // for vector
 
-#include "Element.h"
+#include "Element.h"  // for Element, Element::Index
 
 template <class T>
 using optional = std::optional<T>;
@@ -24,8 +26,7 @@ public:
     Layer();
     virtual ~Layer();
 
-    using ElementIndex = std::ptrdiff_t;
-    static constexpr auto InvalidElementIndex = static_cast<ElementIndex>(-1);
+    using Index = size_t;
 
 public:
     /**
@@ -40,17 +41,22 @@ public:
      *
      * @note Performs a check to determine whether the element is already contained in the Layer
      */
-    void insertElement(Element* e, ElementIndex pos);
+    void insertElement(Element* e, Element::Index pos);
 
     /**
      * Returns the index of the given Element with respect to the internal list
      */
-    ElementIndex indexOf(Element* e) const;
+    Element::Index indexOf(Element* e) const;
 
     /**
      * Removes an Element from the Layer and optionally deletes it
      */
-    ElementIndex removeElement(Element* e, bool free);
+    Element::Index removeElement(Element* e, bool free);
+
+    /**
+     * Removes all Elements from the Layer *without freeing them*
+     */
+    void clearNoFree();
 
     /**
      * Returns an iterator over the Element%s contained in this Layer
@@ -76,7 +82,6 @@ public:
      * Creates a deep copy of this Layer by copying all of the Element%s contained in it
      */
     Layer* clone() const;
-
 
     /**
      * @return true if layer has a name

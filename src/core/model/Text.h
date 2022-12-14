@@ -11,11 +11,14 @@
 
 #pragma once
 
-#include <gtk/gtk.h>
+#include <string>  // for string
 
-#include "AudioElement.h"
-#include "Element.h"
-#include "Font.h"
+#include "AudioElement.h"  // for AudioElement
+#include "Font.h"          // for XojFont
+
+class Element;
+class ObjectInputStream;
+class ObjectOutputStream;
 
 class Text: public AudioElement {
 public:
@@ -45,10 +48,10 @@ public:
     /**
      * @overwrite
      */
-    Element* clone() override;
+    Element* clone() const override;
 
-    bool intersects(double x, double y, double halfEraserSize) override;
-    bool intersects(double x, double y, double halfEraserSize, double* gap) override;
+    bool intersects(double x, double y, double halfEraserSize) const override;
+    bool intersects(double x, double y, double halfEraserSize, double* gap) const override;
 
 public:
     // Serialize interface

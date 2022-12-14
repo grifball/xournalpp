@@ -1,31 +1,54 @@
 #include "LatexController.h"
 
-#include <fstream>
-#include <iomanip>
-#include <iterator>
-#include <memory>
-#include <regex>
-#include <sstream>
-#include <utility>
+#include <cstdlib>   // for free
+#include <fstream>   // for ifstream, basic_istream
+#include <iterator>  // for istreambuf_iterator, ope...
+#include <memory>    // for unique_ptr, allocator
+#include <optional>  // for optional
+#include <utility>   // for move
+#include <variant>   // for get_if
 
-#include "control/latex/LatexGenerator.h"
-#include "gui/XournalView.h"
-#include "gui/dialog/LatexDialog.h"
-#include "undo/InsertUndoAction.h"
-#include "util/StringUtils.h"
-#include "util/Util.h"
-#include "util/XojMsgBox.h"
-#include "util/i18n.h"
-#include "util/pixbuf-utils.h"
+#include <glib.h>  // for g_error_free, g_error_ma...
 
-#include "Control.h"
+#include "control/Tool.h"                    // for Tool
+#include "control/ToolEnums.h"               // for TOOL_TEXT
+#include "control/ToolHandler.h"             // for ToolHandler
+#include "control/latex/LatexGenerator.h"    // for LatexGenerator::GenError
+#include "control/settings/LatexSettings.h"  // for LatexSettings
+#include "control/settings/Settings.h"       // for Settings
+#include "control/tools/EditSelection.h"     // for EditSelection
+#include "gui/Layout.h"                      // for Layout
+#include "gui/MainWindow.h"                  // for MainWindow
+#include "gui/PageView.h"                    // for XojPageView
+#include "gui/XournalView.h"                 // for XournalView
+#include "gui/dialog/LatexDialog.h"          // for LatexDialog
+#include "model/Document.h"                  // for Document
+#include "model/Element.h"                   // for Element
+#include "model/Layer.h"                     // for Layer
+#include "model/TexImage.h"                  // for TexImage
+#include "model/Text.h"                      // for Text
+#include "model/XojPage.h"                   // for XojPage
+#include "undo/InsertUndoAction.h"           // for InsertUndoAction
+#include "undo/UndoRedoHandler.h"            // for UndoRedoHandler
+#include "util/Color.h"                      // for Color, get_color_contrast
+#include "util/PathUtil.h"                   // for ensureFolderExists, getT...
+#include "util/PlaceholderString.h"          // for PlaceholderString
+#include "util/Rectangle.h"                  // for Rectangle
+#include "util/Util.h"                       // for npos
+#include "util/XojMsgBox.h"                  // for XojMsgBox
+#include "util/i18n.h"                       // for FS, _, _F, N_
+
+#include "Control.h"  // for Control
 
 using std::string;
+
+const Color LIGHT_PREVIEW_BACKGROUND = Colors::white;
+const Color DARK_PREVIEW_BACKGROUND = Colors::black;
 
 LatexController::LatexController(Control* control):
         control(control),
         settings(control->getSettings()->latexSettings),
-        dlg(control->getGladeSearchPath()),
+        dlg(control->getGladeSearchPath(), settings),
         doc(control->getDocument()),
         texTmpDir(Util::getTmpDirSubfolder("tex")),
         generator(settings) {
@@ -91,8 +114,9 @@ void LatexController::findSelectedTexElement() {
     if (this->selectedElem) {
         // this will get the position of the Latex properly
         EditSelection* theSelection = control->getWindow()->getXournal()->getSelection();
-        this->posx = theSelection->getXOnView();
-        this->posy = theSelection->getYOnView();
+        xoj::util::Rectangle<double> rect = theSelection->getSnappedBounds();
+        this->posx = rect.x;
+        this->posy = rect.y;
 
         if (auto* img = dynamic_cast<TexImage*>(this->selectedElem)) {
             this->initialTex = img->getText();
@@ -113,12 +137,12 @@ void LatexController::findSelectedTexElement() {
 
         if (layout->getPageViewAt(centerX, centerY) == this->view) {
             // Pick the center of the visible area (converting from screen to page coordinates)
-            this->posx = (centerX - this->view->getX()) / zoom;
-            this->posy = (centerY - this->view->getY()) / zoom;
+            this->posx = static_cast<int>((centerX - this->view->getX()) / zoom);
+            this->posy = static_cast<int>((centerY - this->view->getY()) / zoom);
         } else {
             // No better location, so just center it on the page (possibly out of viewport)
-            this->posx = 0.5 * this->page->getWidth();
-            this->posy = 0.5 * this->page->getHeight();
+            this->posx = static_cast<int>(this->page->getWidth() / 2);
+            this->posy = static_cast<int>(this->page->getHeight() / 2);
         }
     }
     this->doc->unlock();
@@ -129,7 +153,7 @@ auto LatexController::showTexEditDialog() -> string {
     // callback is triggered
     gulong signalHandler = g_signal_connect(dlg.getTextBuffer(), "changed", G_CALLBACK(handleTexChanged), this);
     bool isNewFormula = this->initialTex.empty();
-    this->dlg.setFinalTex(isNewFormula ? "x^2" : this->initialTex);
+    this->dlg.setFinalTex(isNewFormula ? this->settings.defaultText : this->initialTex);
 
     if (this->temporaryRender != nullptr) {
         this->dlg.setTempRender(this->temporaryRender->getPdf());
@@ -149,16 +173,27 @@ void LatexController::triggerImageUpdate(const string& texString) {
         return;
     }
 
+    Color textColor = this->control->getToolHandler()->getTool(TOOL_TEXT).getColor();
+
+    // Determine a background color that has enough contrast with the text color:
+    if (Util::get_color_contrast(textColor, LIGHT_PREVIEW_BACKGROUND) > 0.5) {
+        this->dlg.setPreviewBackgroundColor(LIGHT_PREVIEW_BACKGROUND);
+    } else {
+        this->dlg.setPreviewBackgroundColor(DARK_PREVIEW_BACKGROUND);
+    }
+
     this->lastPreviewedTex = texString;
-    const std::string texContents = LatexGenerator::templateSub(
-            texString, this->latexTemplate, this->control->getToolHandler()->getTool(TOOL_TEXT).getColor());
+    const std::string texContents = LatexGenerator::templateSub(texString, this->latexTemplate, textColor);
     auto result = generator.asyncRun(this->texTmpDir, texContents);
     if (auto* err = std::get_if<LatexGenerator::GenError>(&result)) {
         XojMsgBox::showErrorToUser(this->control->getGtkWindow(), err->message);
     } else if (auto** proc = std::get_if<GSubprocess*>(&result)) {
+        // Render the TeX and capture the process' output.
         updating_cancellable = g_cancellable_new();
-        g_subprocess_wait_check_async(*proc, updating_cancellable,
-                                      reinterpret_cast<GAsyncReadyCallback>(onPdfRenderComplete), this);
+        char* stdinBuff = nullptr;  // No stdin
+
+        g_subprocess_communicate_utf8_async(*proc, stdinBuff, updating_cancellable,
+                                            reinterpret_cast<GAsyncReadyCallback>(onPdfRenderComplete), this);
     }
 
     updateStatus();
@@ -178,8 +213,24 @@ void LatexController::handleTexChanged(GtkTextBuffer* buffer, LatexController* s
 
 void LatexController::onPdfRenderComplete(GObject* procObj, GAsyncResult* res, LatexController* self) {
     GError* err = nullptr;
+    bool procExited = false;
     GSubprocess* proc = G_SUBPROCESS(procObj);
-    g_subprocess_wait_check_finish(proc, res, &err);
+
+    // Extract the process' output and store it.
+    {
+        char* procStdout_ptr = nullptr;
+
+        // Stdout and stderr should be merged.
+        procExited = g_subprocess_communicate_utf8_finish(proc, res, &procStdout_ptr, nullptr, &err);
+
+        // If we have stdout, store it.
+        if (procStdout_ptr != nullptr) {
+            self->texProcessOutput = procStdout_ptr;
+            free(procStdout_ptr);
+        } else {
+            g_warning("latex command: no stdout stream");
+        }
+    }
 
     if (err != nullptr) {
         if (g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
@@ -193,16 +244,26 @@ void LatexController::onPdfRenderComplete(GObject* procObj, GAsyncResult* res, L
             g_warning("latex: %s", message.c_str());
             XojMsgBox::showErrorToUser(self->control->getGtkWindow(), message);
         }
+
         self->isValidTex = false;
+        g_error_free(err);
+    } else if (procExited && g_subprocess_get_exit_status(proc) != 0) {
+        // Command exited with non-zero exit status.
+
+        self->isValidTex = false;
+    } else {
+        self->isValidTex = true;
+    }
+
+    // Delete the PDF if the TeX is invalid.
+    if (!self->isValidTex) {
         fs::path pdfPath = self->texTmpDir / "tex.pdf";
         fs::remove(pdfPath);
-        g_error_free(err);
     }
 
     const string currentTex = self->dlg.getBufferContents();
     bool shouldUpdate = self->lastPreviewedTex != currentTex;
-    if (err == nullptr) {
-        self->isValidTex = true;
+    if (self->isValidTex) {
         self->temporaryRender = self->loadRendered(currentTex);
         if (self->temporaryRender != nullptr) {
             self->dlg.setTempRender(self->temporaryRender->getPdf());
@@ -236,8 +297,14 @@ void LatexController::updateStatus() {
 
     gtk_widget_set_sensitive(okButton, buttonEnabled);
 
+    // Show error warning only if LaTeX is invalid.
     GtkLabel* errorLabel = GTK_LABEL(this->dlg.get("texErrorLabel"));
     gtk_label_set_text(errorLabel, this->isValidTex ? "" : N_("The formula is empty when rendered or invalid."));
+
+    // Update the output pane.
+    GtkTextView* commandOutputDisplay = GTK_TEXT_VIEW(this->dlg.get("texCommandOutputText"));
+    GtkTextBuffer* commandOutputBuffer = gtk_text_view_get_buffer(commandOutputDisplay);
+    gtk_text_buffer_set_text(commandOutputBuffer, this->texProcessOutput.c_str(), -1);
 }
 
 void LatexController::deleteOldImage() {

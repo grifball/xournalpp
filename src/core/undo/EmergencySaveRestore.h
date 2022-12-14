@@ -12,22 +12,23 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "UndoAction.h"
+#include "UndoAction.h"  // for UndoAction
+
+class Control;
 
 
 class EmergencySaveRestore: public UndoAction {
 public:
     EmergencySaveRestore();
-    virtual ~EmergencySaveRestore();
+    ~EmergencySaveRestore() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
 };

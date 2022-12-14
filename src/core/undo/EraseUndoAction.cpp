@@ -1,9 +1,17 @@
 #include "EraseUndoAction.h"
 
-#include "model/Layer.h"
-#include "model/Stroke.h"
-#include "model/eraser/ErasableStroke.h"
-#include "util/i18n.h"
+#include <memory>  // for __shared_ptr_access, __shar...
+#include <vector>  // for vector
+
+#include "model/Layer.h"                  // for Layer
+#include "model/Stroke.h"                 // for Stroke
+#include "model/XojPage.h"                // for XojPage
+#include "model/eraser/ErasableStroke.h"  // for ErasableStroke
+#include "undo/PageLayerPosEntry.h"       // for PageLayerPosEntry, operator<
+#include "undo/UndoAction.h"              // for UndoAction
+#include "util/i18n.h"                    // for _
+
+class Control;
 
 
 EraseUndoAction::EraseUndoAction(const PageRef& page): UndoAction("EraseUndoAction") { this->page = page; }
@@ -31,7 +39,7 @@ void EraseUndoAction::finalize() {
             int pos = static_cast<int>(entry.layer->removeElement(entry.element, false));
 
             ErasableStroke* e = entry.element->getErasable();
-            std::vector<std::unique_ptr<Stroke>> strokeList = e->getStroke(entry.element);
+            std::vector<std::unique_ptr<Stroke>> strokeList = e->getStrokes();
             for (auto& stroke: strokeList) {
                 // TODO (Marmare314): should use unique_ptr in layer
                 Stroke* copy = stroke.release();

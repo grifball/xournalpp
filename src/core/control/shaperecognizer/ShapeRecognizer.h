@@ -11,21 +11,22 @@
 
 #pragma once
 
-#include <array>
+#include <array>  // for array
 
-#include "CircleRecognizer.h"
 #include "RecoSegment.h"
-#include "ShapeRecognizerConfig.h"
+#include "ShapeRecognizerConfig.h"  // for MAX_POLYGON_SIDES
 
 class Stroke;
 class Point;
+class Inertia;
+struct RecoSegment;
 
 class ShapeRecognizer {
 public:
     ShapeRecognizer();
     virtual ~ShapeRecognizer();
 
-    Stroke* recognizePatterns(Stroke* stroke);
+    Stroke* recognizePatterns(Stroke* stroke, double strokeMinSize);
     void resetRecognizer();
 
 private:
@@ -35,6 +36,8 @@ private:
     static void optimizePolygonal(const Point* pt, int nsides, int* breaks, Inertia* ss);
 
     int findPolygonal(const Point* pt, int start, int end, int nsides, int* breaks, Inertia* ss);
+
+    static bool isStrokeLargeEnough(Stroke* stroke, double strokeMinSize);
 
 private:
     std::array<RecoSegment, MAX_POLYGON_SIDES + 1> queue{};

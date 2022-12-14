@@ -12,28 +12,35 @@
 
 #pragma once
 
-#include <deque>
-#include <string>
-#include <vector>
+#include <deque>    // for deque
+#include <utility>  // for pair
+#include <vector>   // for vector
 
-#include "control/Tool.h"
-#include "model/Font.h"
-#include "model/PageRef.h"
-#include "model/Snapping.h"
-#include "undo/UndoAction.h"
-#include "view/ElementContainer.h"
+#include <cairo.h>  // for cairo_t, cairo_matrix_t
+#include <glib.h>   // for GSource
 
-#include "CursorSelectionType.h"
-#include "SnapToGridInputHandler.h"
+#include "control/ToolEnums.h"              // for ToolSize
+#include "model/Element.h"                  // for Element, Element::Index
+#include "model/ElementContainer.h"         // for ElementContainer
+#include "model/PageRef.h"                  // for PageRef
+#include "undo/UndoAction.h"                // for UndoAction (ptr only)
+#include "util/Color.h"                     // for Color
+#include "util/Rectangle.h"                 // for Rectangle
+#include "util/serializing/Serializable.h"  // for Serializable
 
+#include "CursorSelectionType.h"     // for CursorSelectionType, CURS...
+#include "SnapToGridInputHandler.h"  // for SnapToGridInputHandler
 
 class UndoRedoHandler;
 class Layer;
 class XojPageView;
 class Selection;
-class Element;
 class EditSelectionContents;
 class DeleteUndoAction;
+class LineStyle;
+class ObjectInputStream;
+class ObjectOutputStream;
+class XojFont;
 
 class EditSelection: public ElementContainer, public Serializable {
 public:
@@ -41,7 +48,8 @@ public:
     EditSelection(UndoRedoHandler* undo, Selection* selection, XojPageView* view);
     EditSelection(UndoRedoHandler* undo, Element* e, XojPageView* view, const PageRef& page);
     EditSelection(UndoRedoHandler* undo, const std::vector<Element*>& elements, XojPageView* view, const PageRef& page);
-    virtual ~EditSelection();
+    EditSelection(UndoRedoHandler* undo, XojPageView* view, const PageRef& page, Layer* layer);
+    ~EditSelection() override;
 
 private:
     /**
@@ -92,7 +100,27 @@ public:
     /**
      * Get the bounding rectangle in document coordinates (multiple with zoom)
      */
-    Rectangle<double> getRect() const;
+    xoj::util::Rectangle<double> getRect() const;
+
+    /**
+     * gets the minimal bounding box containing all elements of the selection used for e.g. grid snapping
+     */
+    xoj::util::Rectangle<double> getSnappedBounds() const;
+
+    /**
+     * get the original bounding rectangle in document coordinates
+     */
+    xoj::util::Rectangle<double> getOriginalBounds() const;
+
+    /**
+     * Get the rotation angle of the selection
+     */
+    double getRotation() const;
+
+    /**
+     * Get if the selection supports being rotated
+     */
+    bool isRotationSupported() const;
 
     /**
      * Get the source page (where the selection was done)
@@ -159,18 +187,17 @@ public:
      * in case we want to replace it back where it came from.
      * 'InvalidLayerIndex' is a special value that says it has no source layer index (e.g, from clipboard)
      */
-    void addElement(Element* e, Layer::ElementIndex order = Layer::InvalidElementIndex);
+    void addElement(Element* e, Element::Index order = Element::InvalidIndex);
 
     /**
      * Returns all containing elements of this selection
      */
-    std::vector<Element*>* getElements();
-    const std::vector<Element*>* getElements() const;
+    const std::vector<Element*>& getElements() const override;
 
     /**
      * Returns the insert order of this selection
      */
-    std::deque<std::pair<Element*, Layer::ElementIndex>> const& getInsertOrder() const;
+    std::deque<std::pair<Element*, Element::Index>> const& getInsertOrder() const;
 
     enum class OrderChange {
         BringToFront,
@@ -210,7 +237,7 @@ public:
      * Gets the selection's bounding box in view coordinates. This takes document zoom
      * and selection rotation into account.
      */
-    auto getBoundingBoxInView() const -> Rectangle<double>;
+    auto getBoundingBoxInView() const -> xoj::util::Rectangle<double>;
 
     /**
      * If the selection is outside the visible area correct the coordinates
@@ -240,8 +267,8 @@ public:
 
 public:
     // Serialize interface
-    void serialize(ObjectOutputStream& out) const;
-    void readSerialized(ObjectInputStream& in);
+    void serialize(ObjectOutputStream& out) const override;
+    void readSerialized(ObjectInputStream& in) override;
 
 private:
     /**
@@ -327,7 +354,7 @@ private:  // DATA
     /**
      * The size and dimensions for snapping
      */
-    Rectangle<double> snappedBounds{};
+    xoj::util::Rectangle<double> snappedBounds{};
 
 
     /**

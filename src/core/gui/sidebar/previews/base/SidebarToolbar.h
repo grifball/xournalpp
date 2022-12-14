@@ -11,12 +11,11 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkButton, GtkToolButton
 
-#include "gui/GladeGui.h"
+class GladeGui;
 
 
 enum SidebarActions {
@@ -26,7 +25,8 @@ enum SidebarActions {
     SIDEBAR_ACTION_COPY = 1 << 2,
     SIDEBAR_ACTION_DELETE = 1 << 3,
     SIDEBAR_ACTION_NEW_BEFORE = 1 << 4,
-    SIDEBAR_ACTION_NEW_AFTER = 1 << 5
+    SIDEBAR_ACTION_NEW_AFTER = 1 << 5,
+    SIDEBAR_ACTION_MERGE_DOWN = 1 << 6,
 };
 
 class SidebarToolbarActionListener {

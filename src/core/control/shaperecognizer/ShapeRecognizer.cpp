@@ -1,13 +1,21 @@
 #include "ShapeRecognizer.h"
 
-#include <cmath>
+#include <cmath>     // for fabs, M_PI
+#include <iterator>  // for begin, next
+#include <memory>    // for allocator...
+#include <utility>   // for move
+#include <vector>    // for vector
 
-#include <config-debug.h>
+#include <glib.h>  // for g_message
 
-#include "model/Stroke.h"
+#include "control/shaperecognizer/RecoSegment.h"            // for RecoSegment
+#include "control/shaperecognizer/ShapeRecognizerConfig.h"  // for RDEBUG
+#include "model/Point.h"                                    // for Point
+#include "model/Stroke.h"                                   // for Stroke
 
-#include "CircleRecognizer.h"
-#include "Inertia.h"
+#include "CircleRecognizer.h"  // for CircleRec...
+#include "Inertia.h"           // for Inertia
+#include "config-debug.h"      // for DEBUG_REC...
 
 ShapeRecognizer::ShapeRecognizer() {
     resetRecognizer();
@@ -79,7 +87,9 @@ auto ShapeRecognizer::tryRectangle() -> Stroke* {
     auto* s = new Stroke();
     s->applyStyleFrom(this->stroke);
 
-    for (int i = 0; i <= 3; i++) { rs[i].angle = avgAngle + i * M_PI / 2; }
+    for (int i = 0; i <= 3; i++) {
+        rs[i].angle = avgAngle + i * M_PI / 2;
+    }
 
     for (int i = 0; i <= 3; i++) {
         Point p = rs[i].calcEdgeIsect(&rs[(i + 1) % 4]);
@@ -235,12 +245,24 @@ void ShapeRecognizer::optimizePolygonal(const Point* pt, int nsides, int* breaks
 }
 
 /**
+ * Determine if a particular stroke is large enough as to make a shape out of it
+ */
+auto ShapeRecognizer::isStrokeLargeEnough(Stroke* stroke, double strokeMinSize) -> bool {
+    if (stroke->getPointCount() < 3) {
+        return false;
+    }
+
+    auto rect = stroke->getSnappedBounds();
+    return std::hypot(rect.width, rect.height) >= strokeMinSize;
+}
+
+/**
  * The main pattern recognition function
  */
-auto ShapeRecognizer::recognizePatterns(Stroke* stroke) -> Stroke* {
+auto ShapeRecognizer::recognizePatterns(Stroke* stroke, double strokeMinSize) -> Stroke* {
     this->stroke = stroke;
 
-    if (stroke->getPointCount() < 3) {
+    if (!isStrokeLargeEnough(stroke, strokeMinSize)) {
         return nullptr;
     }
 
@@ -263,7 +285,9 @@ auto ShapeRecognizer::recognizePatterns(Stroke* stroke) -> Stroke* {
         while (n + queueLength > MAX_POLYGON_SIDES) {
             // remove oldest polygonal stroke
             int i = 1;
-            while (i < queueLength && queue[i].startpt != 0) { i++; }
+            while (i < queueLength && queue[i].startpt != 0) {
+                i++;
+            }
             queueLength -= i;
             std::move(std::next(begin(queue), i), std::next(begin(queue), i + queueLength), begin(queue));
         }

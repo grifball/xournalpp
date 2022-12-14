@@ -11,36 +11,34 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cairo.h>  // for cairo_t
 
-#include "pdf/base/XojPdfPage.h"
+#include "pdf/base/XojPdfPage.h"  // for XojPdfPageSPtr
 
-#include "BaseElementView.h"
-
+#include "BaseElementView.h"  // for BaseElementView
 
 class PdfPagesDialog;
 
 class PdfElementView: public BaseElementView {
 public:
     PdfElementView(int id, XojPdfPageSPtr page, PdfPagesDialog* dlg);
-    ~PdfElementView();
+    ~PdfElementView() override;
 
 protected:
     /**
      * Paint the contents (without border / selection)
      */
-    virtual void paintContents(cairo_t* cr);
+    void paintContents(cairo_t* cr) override;
 
     /**
      * Get the width in pixel, without shadow / border
      */
-    virtual int getContentWidth();
+    int getContentWidth() override;
 
     /**
      * Get the height in pixel, without shadow / border
      */
-    virtual int getContentHeight();
+    int getContentHeight() override;
 
 public:
     bool isUsed() const;

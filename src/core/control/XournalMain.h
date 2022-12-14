@@ -11,16 +11,8 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
 
-#include <config.h>
-#include <glib.h>
 
-#include "filesystem.h"
-
-class GladeSearchpath;
-class Control;
 
 namespace XournalMain {
 auto run(int argc, char** argv) -> int;

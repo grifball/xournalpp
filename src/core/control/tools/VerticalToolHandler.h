@@ -11,49 +11,120 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <memory>    // for unique_ptr
+#include <optional>  // for optional
+#include <vector>    // for vector
 
-#include <cairo.h>
+#include <cairo.h>    // for cairo_surface_t, cairo_t
+#include <gdk/gdk.h>  // for GdkEventKey, GdkWindow
 
-#include "gui/Redrawable.h"
-#include "model/PageRef.h"
-#include "undo/MoveUndoAction.h"
-#include "view/ElementContainer.h"
+#include "model/ElementContainer.h"  // for ElementContainer
+#include "model/OverlayBase.h"
+#include "model/PageRef.h"  // for PageRef
+#include "util/Range.h"
 
-#include "SnapToGridInputHandler.h"
+#include "SnapToGridInputHandler.h"  // for SnapToGridInputHandler
 
+class Element;
+class Layer;
+class MoveUndoAction;
+class Settings;
+class ZoomControl;
 
-class VerticalToolHandler: public ElementContainer {
+namespace xoj::view {
+class OverlayView;
+class Repaintable;
+class VerticalToolView;
+};  // namespace xoj::view
+
+namespace xoj::util {
+template <class T>
+class DispatchPool;
+};  // namespace xoj::util
+
+/**
+ * Handler class for the Vertical Spacing tool.
+ */
+class VerticalToolHandler: public ElementContainer, public OverlayBase {
 public:
-    VerticalToolHandler(Redrawable* view, const PageRef& page, Settings* settings, double y, double zoom);
+    /**
+     * @param initiallyReverse Set this to true if the user has the reverse mode
+     * button (e.g., Ctrl) held down when a vertical selection is started.
+     */
+    VerticalToolHandler(const PageRef& page, Settings* settings, double y, bool initiallyReverse);
     ~VerticalToolHandler() override;
+    VerticalToolHandler(VerticalToolHandler&) = delete;
+    VerticalToolHandler& operator=(VerticalToolHandler&) = delete;
+    VerticalToolHandler(VerticalToolHandler&&) = delete;
+    VerticalToolHandler&& operator=(VerticalToolHandler&&) = delete;
 
-    void paint(cairo_t* cr, GdkRectangle* rect, double zoom);
+    void paint(cairo_t* cr);
+
+    /** Update the tool state with the new spacing position */
     void currentPos(double x, double y);
+
+    bool onKeyPressEvent(GdkEventKey* event);
+    bool onKeyReleaseEvent(GdkEventKey* event);
 
     std::unique_ptr<MoveUndoAction> finalize();
 
-    std::vector<Element*>* getElements() override;
+    const std::vector<Element*>& getElements() const override;
+
+    auto createView(xoj::view::Repaintable* parent, ZoomControl* zoomControl, const Settings* settings) const
+            -> std::unique_ptr<xoj::view::OverlayView>;
+
+    enum class Side {
+        /** elements above the reference line */
+        Above = -1,
+        /** elements below the reference line */
+        Below = 1,
+    };
+
+    inline double getStartY() const { return startY; }
+    inline double getEndY() const { return endY; }
+    inline Side getSide() const { return spacingSide; }
+    double getPageWidth() const;
+
+    inline auto getViewPool() const -> std::shared_ptr<xoj::util::DispatchPool<xoj::view::VerticalToolView>> {
+        return viewPool;
+    }
 
 private:
-    Redrawable* view = nullptr;
-    PageRef page;
-    Layer* layer = nullptr;
-    std::vector<Element*> elements;
-
-    cairo_surface_t* crBuffer = nullptr;
-
-    double startY = 0;
-    double endY = 0;
+    /**
+     * Clear the currently moved elements, and then select all elements
+     * above/below startY (depending on the side) to use for the spacing.
+     * Lastly, redraw the elements to the buffer.
+     */
+    void adoptElements(Side side);
 
     /**
-     * When we create a new page
+     * @brief Get the bounding range of the collection of elements we have adopted
+     * @return The returned range may be empty if no elements have been adopted
      */
-    double jumpY = 0;
+    Range computeElementsBoundingBox() const;
+
+
+    PageRef page;
+    Layer* layer;
+    std::vector<Element*> elements;
+    /**
+     * @brief Stores the smallest box containing all the adopted elements. 
+     *     Used to only refresh the part of the screen that needs refreshing.
+     */
+    Range ownedElementsOriginalBoundingBox;
+
+    double startY;
+    double endY;
+
+    /**
+     * Indicates whether to move elements above or below the anchor line.
+     */
+    Side spacingSide;
 
     /**
      * The handler for snapping points
      */
     SnapToGridInputHandler snappingHandler;
+
+    std::shared_ptr<xoj::util::DispatchPool<xoj::view::VerticalToolView>> viewPool;
 };

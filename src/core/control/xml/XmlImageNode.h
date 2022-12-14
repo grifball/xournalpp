@@ -11,7 +11,11 @@
 
 #pragma once
 
-#include "XmlNode.h"
+#include <cairo.h>  // for cairo_surface_t, cairo_status_t
+
+#include "XmlNode.h"  // for XmlNode
+
+class OutputStream;
 
 class XmlImageNode: public XmlNode {
 public:
@@ -23,7 +27,7 @@ public:
 
     static cairo_status_t pngWriteFunction(XmlImageNode* image, const unsigned char* data, unsigned int length);
 
-    virtual void writeOut(OutputStream* out);
+    void writeOut(OutputStream* out) override;
 
 private:
     cairo_surface_t* img;

@@ -11,25 +11,24 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <gtk/gtk.h>  // for GtkButton, GtkWindow
 
-#include "gui/GladeGui.h"
+#include "BackgroundSelectDialogBase.h"  // for BackgroundSelectDialogBase
 
-#include "BackgroundSelectDialogBase.h"
-
-
-class BackgroundImage;
+struct BackgroundImage;
+class Document;
+class GladeSearchpath;
+class Settings;
 
 class ImagesDialog: public BackgroundSelectDialogBase {
 public:
     ImagesDialog(GladeSearchpath* gladeSearchPath, Document* doc, Settings* settings);
-    virtual ~ImagesDialog();
+    ~ImagesDialog() override;
 
 public:
     BackgroundImage getSelectedImage();
     bool shouldShowFilechooser();
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
 private:
     /**

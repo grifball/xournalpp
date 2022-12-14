@@ -11,20 +11,23 @@
 
 #pragma once
 
-#include "BaseExportJob.h"
+#include "BaseExportJob.h"  // for BaseExportJob
+#include "filesystem.h"     // for path
+
+class Control;
 
 class PdfExportJob: public BaseExportJob {
 public:
     PdfExportJob(Control* control);
 
 protected:
-    virtual ~PdfExportJob();
+    ~PdfExportJob() override;
 
 public:
-    void run();
+    void run() override;
 
 protected:
-    virtual void addFilterToDialog();
+    void addFilterToDialog() override;
     bool testAndSetFilepath(fs::path file) override;
 
 private:

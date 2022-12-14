@@ -11,18 +11,20 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include <gtk/gtk.h>
+#include "util/serializing/Serializable.h"  // for Serializable
 
-#include "util/serializing/Serializable.h"
+class ObjectInputStream;
+class ObjectOutputStream;
 
 
 class XojFont: public Serializable {
 public:
     XojFont();
-    virtual ~XojFont();
+    XojFont(std::string name, double size);
+
+    ~XojFont() override;
 
 public:
     std::string getName() const;
@@ -31,12 +33,28 @@ public:
     double getSize() const;
     void setSize(double size);
 
+    /**
+     * @return The Pango-style string that represents this
+     * font.
+     */
+    std::string asString() const;
+
     void operator=(const XojFont& font);
+
+    /**
+     * Set this from a Pango-style font description.
+     * E.g.
+     *   Serif 12
+     * sets this' size to 12 and this font's name to Serif.
+     *
+     * @param description Pango-style font description.
+     */
+    void operator=(const std::string& description);
 
 public:
     // Serialize interface
-    void serialize(ObjectOutputStream& out) const;
-    void readSerialized(ObjectInputStream& in);
+    void serialize(ObjectOutputStream& out) const override;
+    void readSerialized(ObjectInputStream& in) override;
 
 private:
     void updateFontDesc();

@@ -47,6 +47,11 @@ stages:
         parameters:
           ubuntu_version: 20.04
           job_name: 'Ubuntu20_04'
+      - template: jobs/release_ubuntu.yml
+        parameters:
+          ubuntu_version: 22.04
+          job_name: 'Ubuntu22_04'
+          gcc_version: '10'
       - job: 'Debian'
         pool:
           vmImage: 'ubuntu-18.04'
@@ -56,8 +61,11 @@ stages:
         steps:
           - bash: |
               sudo apt-get update
-              sudo apt-get install -y build-essential gcc-10 g++-10 cmake ninja-build libgtk-3-dev libpoppler-glib-dev libxml2-dev portaudio19-dev libsndfile-dev liblua5.3-dev \
-                                      libzip-dev gettext lsb-release librsvg2-dev help2man
+              sudo apt-get install -y build-essential gcc-10 g++-10 cmake \
+                  ninja-build libgtk-3-dev libpoppler-glib-dev libxml2-dev \
+                  portaudio19-dev libsndfile-dev liblua5.3-dev \
+                  libzip-dev gettext lsb-release librsvg2-dev help2man \
+                  libgtest-dev
             displayName: 'Install dependencies'
           - template: steps/build_linux.yml
             parameters:
@@ -73,7 +81,7 @@ stages:
 
       - job: Windows
         pool:
-          vmImage: 'vs2017-win2016'
+          vmImage: 'windows-2019'
         displayName: 'Build for Windows'
         steps:
           - template: steps/build_windows.yml
@@ -97,7 +105,7 @@ stages:
 
       - job: macOS
         pool:
-          vmImage: 'macOS-10.15'
+          vmImage: 'macOS-11'
         displayName: 'Build for macOS'
         steps:
           - template: steps/build_mac.yml

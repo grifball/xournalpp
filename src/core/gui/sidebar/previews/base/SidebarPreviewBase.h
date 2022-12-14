@@ -11,28 +11,30 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
+#include <vector>   // for vector
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkWidget, GtkAllocation
 
-#include "gui/GladeGui.h"
-#include "gui/sidebar/AbstractSidebarPage.h"
-
+#include "gui/sidebar/AbstractSidebarPage.h"  // for AbstractSidebarPage
+#include "model/DocumentChangeType.h"         // for DocumentChangeType
 
 class PdfCache;
 class SidebarLayout;
 class SidebarPreviewBaseEntry;
 class SidebarToolbar;
+class Control;
+class GladeGui;
 
 class SidebarPreviewBase: public AbstractSidebarPage {
 public:
     SidebarPreviewBase(Control* control, GladeGui* gui, SidebarToolbar* toolbar);
-    virtual ~SidebarPreviewBase();
+    ~SidebarPreviewBase() override;
 
 public:
-    virtual void enableSidebar();
-    virtual void disableSidebar();
+    void enableSidebar() override;
+    void disableSidebar() override;
 
     /**
      * Layout the pages to the current size of the sidebar
@@ -47,12 +49,12 @@ public:
     /**
      * @overwrite
      */
-    virtual bool hasData();
+    bool hasData() override;
 
     /**
      * @overwrite
      */
-    virtual GtkWidget* getWidget();
+    GtkWidget* getWidget() override;
 
     /**
      * Gets the zoom factor for the previews
@@ -66,9 +68,9 @@ public:
 
 public:
     // DocumentListener interface (only the part handled by SidebarPreviewBase)
-    virtual void documentChanged(DocumentChangeType type);
-    virtual void pageInserted(size_t page);
-    virtual void pageDeleted(size_t page);
+    void documentChanged(DocumentChangeType type) override;
+    void pageInserted(size_t page) override;
+    void pageDeleted(size_t page) override;
 
 protected:
     /**
@@ -80,6 +82,12 @@ protected:
      * The size of the sidebar has chnaged
      */
     static void sizeChanged(GtkWidget* widget, GtkAllocation* allocation, SidebarPreviewBase* sidebar);
+
+public:
+    /**
+     * Opens a context menu, at the current cursor position.
+     */
+    virtual void openPreviewContextMenu() = 0;
 
 private:
     /**
@@ -95,7 +103,7 @@ private:
     /**
      * For preview rendering
      */
-    PdfCache* cache = nullptr;
+    std::unique_ptr<PdfCache> cache;
 
     /**
      * The layouting class for the prviews

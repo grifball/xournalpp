@@ -11,19 +11,18 @@
 
 #pragma once
 
-#include <optional>
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <list>     // for list
+#include <string>   // for string
 
-#include "control/Actions.h"
-#include "gui/dialog/RenameLayerDialog.h"
-#include "model/DocumentListener.h"
-#include "model/PageRef.h"
-
+#include "enums/ActionType.enum.h"     // for ActionType
+#include "model/DocumentChangeType.h"  // for DocumentChangeType
+#include "model/DocumentListener.h"    // for DocumentListener
+#include "model/Layer.h"               // for Layer, Layer::Index
+#include "model/PageRef.h"             // for PageRef
 
 class LayerCtrlListener;
 class Control;
-class Layer;
 
 class LayerController: public DocumentListener {
 public:
@@ -35,17 +34,16 @@ public:
     void pageSelected(size_t page) override;
 
 public:
-    void insertLayer(PageRef page, Layer* layer, int layerPos);
+    void insertLayer(PageRef page, Layer* layer, Layer::Index layerPos);
     void removeLayer(PageRef page, Layer* layer);
-    void addLayer(PageRef page, Layer* layer);
 
     // Listener handling
 public:
     void addListener(LayerCtrlListener* listener);
     void removeListener(LayerCtrlListener* listener);
+    void fireRebuildLayerMenu();
 
 protected:
-    void fireRebuildLayerMenu();
     void fireLayerVisibilityChanged();
 
 public:
@@ -70,31 +68,32 @@ public:
     void deleteCurrentLayer();
     void copyCurrentLayer();
     void moveCurrentLayer(bool up);
-    void switchToLay(int layer, bool hideShow = false);
-    void setLayerVisible(int layerId, bool visible);
+    void mergeCurrentLayerDown();
+    void switchToLay(Layer::Index layerId, bool hideShow = false, bool clearSelection = true);
+    void setLayerVisible(Layer::Index layerId, bool visible);
 
-    PageRef getCurrentPage();
+    PageRef getCurrentPage() const;
     size_t getCurrentPageId() const;
 
     /**
      * @return Layer count of the current page
      */
-    size_t getLayerCount();
+    Layer::Index getLayerCount() const;
 
     /**
      * @return Current layer ID
      */
-    size_t getCurrentLayerId();
+    Layer::Index getCurrentLayerId() const;
 
     /**
      * @return Current layer name
      */
-    std::string getCurrentLayerName();
+    std::string getCurrentLayerName() const;
 
     /**
      * @return Get layer name by layer id
      */
-    std::string getLayerNameById(int id);
+    std::string getLayerNameById(Layer::Index id) const;
 
     /**
      * Sets current layer name

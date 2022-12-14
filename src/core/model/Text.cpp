@@ -1,11 +1,19 @@
 #include "Text.h"
 
-#include <utility>
+#include <utility>  // for move
 
-#include "util/Stacktrace.h"
-#include "util/serializing/ObjectInputStream.h"
-#include "util/serializing/ObjectOutputStream.h"
-#include "view/TextView.h"  // Hack: Needed to calculate the view size
+#include <glib.h>  // for g_warning
+
+#include "model/AudioElement.h"                   // for AudioElement
+#include "model/Element.h"                        // for ELEMENT_TEXT, Eleme...
+#include "model/Font.h"                           // for XojFont
+#include "util/Rectangle.h"                       // for Rectangle
+#include "util/Stacktrace.h"                      // for Stacktrace
+#include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
+#include "view/TextView.h"                        // for TextView
+
+using xoj::util::Rectangle;
 
 Text::Text(): AudioElement(ELEMENT_TEXT) {
     this->font.setName("Sans");
@@ -14,7 +22,7 @@ Text::Text(): AudioElement(ELEMENT_TEXT) {
 
 Text::~Text() = default;
 
-auto Text::clone() -> Element* {
+auto Text::clone() const -> Element* {
     Text* text = new Text();
     text->font = this->font;
     text->text = this->text;
@@ -48,7 +56,7 @@ void Text::setText(std::string text) {
 }
 
 void Text::calcSize() const {
-    TextView::calcSize(this, this->width, this->height);
+    xoj::view::TextView::calcSize(this, this->width, this->height);
     this->updateSnapping();
 }
 
@@ -91,11 +99,11 @@ auto Text::isInEditing() const -> bool { return this->inEditing; }
 
 auto Text::rescaleOnlyAspectRatio() -> bool { return true; }
 
-auto Text::intersects(double x, double y, double halfEraserSize) -> bool {
+auto Text::intersects(double x, double y, double halfEraserSize) const -> bool {
     return intersects(x, y, halfEraserSize, nullptr);
 }
 
-auto Text::intersects(double x, double y, double halfEraserSize, double* gap) -> bool {
+auto Text::intersects(double x, double y, double halfEraserSize, double* gap) const -> bool {
     double x1 = this->x - halfEraserSize;
     double x2 = this->x + this->getElementWidth() + halfEraserSize;
     double y1 = this->y - halfEraserSize;

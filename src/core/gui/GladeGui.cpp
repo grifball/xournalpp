@@ -1,14 +1,16 @@
 #include "GladeGui.h"
 
-#include <cstdlib>
-#include <utility>
+#include <cstdlib>  // for exit
 
-#include <config.h>
+#include <glib-object.h>  // for g_object_unref
+#include <glib.h>         // for g_error_free, GError, g_warning
 
-#include "util/XojMsgBox.h"
-#include "util/i18n.h"
+#include "util/PlaceholderString.h"  // for PlaceholderString
+#include "util/XojMsgBox.h"          // for XojMsgBox
+#include "util/i18n.h"               // for FS, _F
 
-#include "GladeSearchpath.h"
+#include "GladeSearchpath.h"  // for GladeSearchpath
+#include "filesystem.h"       // for path
 
 GladeGui::GladeGui(GladeSearchpath* gladeSearchPath, const std::string& glade, const std::string& mainWnd) {
     this->gladeSearchPath = gladeSearchPath;
@@ -36,7 +38,12 @@ GladeGui::GladeGui(GladeSearchpath* gladeSearchPath, const std::string& glade, c
     this->window = get(mainWnd);
 }
 
-GladeGui::~GladeGui() { g_object_unref(builder); }
+GladeGui::~GladeGui() {
+    if (!gtk_widget_get_parent(window)) {
+        gtk_widget_destroy(window);
+    }
+    g_object_unref(builder);
+}
 
 auto GladeGui::get(const std::string& name) -> GtkWidget* {
     GtkWidget* w = GTK_WIDGET(gtk_builder_get_object(builder, name.c_str()));
@@ -46,11 +53,11 @@ auto GladeGui::get(const std::string& name) -> GtkWidget* {
     return w;
 }
 
-auto GladeGui::getWindow() -> GtkWidget* { return this->window; }
+auto GladeGui::getWindow() const -> GtkWidget* { return this->window; }
 
-auto GladeGui::getGladeSearchPath() -> GladeSearchpath* { return this->gladeSearchPath; }
+auto GladeGui::getGladeSearchPath() const -> GladeSearchpath* { return this->gladeSearchPath; }
 
-auto GladeGui::getBuilder() -> GtkBuilder* { return this->builder; }
+auto GladeGui::getBuilder() const -> GtkBuilder* { return this->builder; }
 
 GladeGui::operator GdkWindow*() { return gtk_widget_get_window(GTK_WIDGET(getWindow())); }
 

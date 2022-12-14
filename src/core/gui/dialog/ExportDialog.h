@@ -11,19 +11,24 @@
 
 #pragma once
 
-#include "control/jobs/ImageExport.h"
-#include "control/settings/Settings.h"
-#include "gui/GladeGui.h"
-#include "util/PageRange.h"
+#include <cstddef>  // for size_t
+
+#include <gtk/gtk.h>  // for GtkComboBox, GtkWindow
+
+#include "control/jobs/BaseExportJob.h"  // for ExportBackgroundType
+#include "control/jobs/ImageExport.h"    // for RasterImageQualityParameter
+#include "gui/GladeGui.h"                // for GladeGui
+#include "util/ElementRange.h"           // for PageRangeVector
+
+class GladeSearchpath;
 
 class ExportDialog: public GladeGui {
 public:
     ExportDialog(GladeSearchpath* gladeSearchPath);
-    virtual ~ExportDialog();
 
 public:
-    virtual void show(GtkWindow* parent);
-    void initPages(int current, int count);
+    void show(GtkWindow* parent) override;
+    void initPages(size_t current, size_t count);
     bool isConfirmed() const;
     PageRangeVector getRange();
     bool progressiveMode();
@@ -53,8 +58,8 @@ public:
     static void selectQualityCriterion(GtkComboBox* comboBox, ExportDialog* self);
 
 private:
-    int currentPage = 0;
-    int pageCount = 0;
+    size_t currentPage = 0;
+    size_t pageCount = 0;
 
     bool confirmed = false;
 };

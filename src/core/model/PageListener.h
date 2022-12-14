@@ -11,13 +11,16 @@
 
 #pragma once
 
-#include <memory>
-
-#include "util/Rectangle.h"
+#include <memory>  // for shared_ptr, weak_ptr
+#include <vector>
 
 class Element;
 class PageHandler;
 class Range;
+namespace xoj::util {
+template <class T>
+class Rectangle;
+}  // namespace xoj::util
 
 class PageListener {
 public:
@@ -25,12 +28,13 @@ public:
     virtual ~PageListener();
 
 public:
-    void registerListener(std::shared_ptr<PageHandler> const& handler);
-    void unregisterListener();
+    void registerToHandler(std::shared_ptr<PageHandler> const& handler);
+    void unregisterFromHandler();
 
-    virtual void rectChanged(Rectangle<double>& rect) {}
+    virtual void rectChanged(xoj::util::Rectangle<double>& rect) {}
     virtual void rangeChanged(Range& range) {}
     virtual void elementChanged(Element* elem) {}
+    virtual void elementsChanged(const std::vector<Element*>& elements, const Range& range) {}
     virtual void pageChanged() {}
 
 private:

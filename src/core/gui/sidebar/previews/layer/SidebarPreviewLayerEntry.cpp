@@ -1,18 +1,37 @@
 #include "SidebarPreviewLayerEntry.h"
 
-#include "gui/Shadow.h"
-#include "util/i18n.h"
+#include <gdk/gdk.h>      // for GdkEvent, GDK_BUTTON_PRESS, GdkEve...
+#include <glib-object.h>  // for G_CALLBACK, g_signal_connect, g_si...
 
-#include "SidebarPreviewLayers.h"
+#include "gui/Shadow.h"  // for Shadow
+
+#include "SidebarPreviewLayers.h"  // for SidebarPreviewLayers
 
 
-SidebarPreviewLayerEntry::SidebarPreviewLayerEntry(SidebarPreviewBase* sidebar, const PageRef& page, int layer,
-                                                   const std::string& layerName, size_t index, bool stacked):
+SidebarPreviewLayerEntry::SidebarPreviewLayerEntry(SidebarPreviewLayers* sidebar, const PageRef& page,
+                                                   Layer::Index layerId, const std::string& layerName, size_t index,
+                                                   bool stacked):
         SidebarPreviewBaseEntry(sidebar, page),
+        sidebar(sidebar),
         index(index),
-        layer(layer),
-        stacked(stacked),
-        box(gtk_box_new(GTK_ORIENTATION_VERTICAL, 2)) {
+        layerId(layerId),
+        box(gtk_box_new(GTK_ORIENTATION_VERTICAL, 2)),
+        stacked(stacked) {
+
+    const auto clickCallback = G_CALLBACK(+[](GtkWidget* widget, GdkEvent* event, SidebarPreviewLayerEntry* self) {
+        // Open context menu on right mouse click
+        if (event->type == GDK_BUTTON_PRESS) {
+            auto mouseEvent = reinterpret_cast<GdkEventButton*>(event);
+            if (mouseEvent->button == 3) {
+                self->mouseButtonPressCallback();
+                self->sidebar->openPreviewContextMenu();
+                return true;
+            }
+        }
+        return false;
+    });
+    g_signal_connect_after(this->widget, "button-press-event", clickCallback, this);
+
     GtkWidget* toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
 
     cbVisible = gtk_check_button_new_with_label(layerName.c_str());
@@ -50,7 +69,7 @@ void SidebarPreviewLayerEntry::checkboxToggled() {
     }
 
     bool check = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(cbVisible));
-    (dynamic_cast<SidebarPreviewLayers*>(sidebar))->layerVisibilityChanged(layer + 1, check);
+    (dynamic_cast<SidebarPreviewLayers*>(sidebar))->layerVisibilityChanged(layerId, check);
 }
 
 void SidebarPreviewLayerEntry::mouseButtonPressCallback() {
@@ -63,7 +82,7 @@ auto SidebarPreviewLayerEntry::getRenderType() -> PreviewRenderType {
 
 auto SidebarPreviewLayerEntry::getHeight() -> int { return getWidgetHeight() + toolbarHeight; }
 
-auto SidebarPreviewLayerEntry::getLayer() const -> int { return layer; }
+auto SidebarPreviewLayerEntry::getLayer() const -> Layer::Index { return layerId; }
 
 auto SidebarPreviewLayerEntry::getWidget() -> GtkWidget* { return this->box; }
 

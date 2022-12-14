@@ -1,7 +1,13 @@
 #include "util/serializing/ObjectInputStream.h"
 
-#include "util/i18n.h"
-#include "util/serializing/Serializable.h"
+#include <cinttypes>  // for uint32_t
+
+#include <glib.h>  // for g_free, g_strdup_...
+
+#include "util/PlaceholderString.h"                 // for PlaceholderString
+#include "util/i18n.h"                              // for FORMAT_STR, FS
+#include "util/serializing/InputStreamException.h"  // for InputStreamException
+#include "util/serializing/Serializable.h"          // for XML_VERSION_STR
 
 // This function requires that T is read from its binary representation to work (e.g. integer type)
 template <typename T>
@@ -123,28 +129,22 @@ void ObjectInputStream::readData(void** data, int* length) {
     }
 }
 
-cairo_status_t cairoReadFunction(std::istringstream* iss, unsigned char* data, unsigned int length) {
-    if (iss->str().size() < length) {
-        return CAIRO_STATUS_READ_ERROR;
-    }
-    iss->read((char*)data, length);
-    return CAIRO_STATUS_SUCCESS;
-}
-
-auto ObjectInputStream::readImage() -> cairo_surface_t* {
+auto ObjectInputStream::readImage() -> std::string {
     checkType('m');
 
     if (istream.str().size() < sizeof(size_t)) {
         throw InputStreamException("End reached, but try to read an image's data's length", __FILE__, __LINE__);
     }
 
-    size_t len = readTypeFromSStream<size_t>(istream);
-
+    const size_t len = readTypeFromSStream<size_t>(istream);
     if (istream.str().size() < len) {
         throw InputStreamException("End reached, but try to read an image", __FILE__, __LINE__);
     }
+    std::string data;
+    data.resize(len);
+    istream.read(data.data(), static_cast<int>(len));
 
-    return cairo_image_surface_create_from_png_stream((cairo_read_func_t)(&cairoReadFunction), &istream);
+    return data;
 }
 
 void ObjectInputStream::checkType(char type) {

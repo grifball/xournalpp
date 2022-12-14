@@ -1,21 +1,29 @@
 #include "XournalWidget.h"
 
-#include <cmath>
+#include <algorithm>  // for max
+#include <cmath>      // for NAN
+#include <optional>   // for optional
+#include <vector>     // for vector
 
-#include <config-debug.h>
-#include <gdk/gdk.h>
-#include <gdk/gdkkeysyms.h>
+#include <cairo.h>    // for cairo_restore, cairo_save
+#include <gdk/gdk.h>  // for GdkRectangle, GdkWindowAttr
 
-#include "control/Control.h"
-#include "control/settings/Settings.h"
-#include "control/tools/EditSelection.h"
-#include "gui/Layout.h"
-#include "gui/Shadow.h"
-#include "gui/XournalView.h"
-#include "gui/inputdevices/InputContext.h"
-#include "gui/scroll/ScrollHandling.h"
-#include "util/Rectangle.h"
-#include "util/Util.h"
+#include "control/Control.h"                // for Control
+#include "control/settings/Settings.h"      // for Settings
+#include "control/tools/EditSelection.h"    // for EditSelection
+#include "gui/Layout.h"                     // for Layout
+#include "gui/LegacyRedrawable.h"           // for Redrawable
+#include "gui/PageView.h"                   // for XojPageView
+#include "gui/Shadow.h"                     // for Shadow
+#include "gui/XournalView.h"                // for XournalView
+#include "gui/inputdevices/InputContext.h"  // for InputContext
+#include "gui/scroll/ScrollHandling.h"      // for ScrollHandling
+#include "util/Color.h"                     // for cairo_set_source_rgbi
+#include "util/Rectangle.h"                 // for Rectangle
+#include "view/SetsquareView.h"             // for SetsquareView
+
+
+using xoj::util::Rectangle;
 
 static void gtk_xournal_class_init(GtkXournalClass* klass);
 static void gtk_xournal_init(GtkXournal* xournal);
@@ -24,7 +32,7 @@ static void gtk_xournal_get_preferred_height(GtkWidget* widget, gint* minimal_he
 static void gtk_xournal_size_allocate(GtkWidget* widget, GtkAllocation* allocation);
 static void gtk_xournal_realize(GtkWidget* widget);
 static auto gtk_xournal_draw(GtkWidget* widget, cairo_t* cr) -> gboolean;
-static void gtk_xournal_destroy(GtkWidget* object);
+static void gtk_xournal_dispose(GObject* object);
 
 auto gtk_xournal_get_type(void) -> GType {
     static GType gtk_xournal_type = 0;
@@ -61,10 +69,9 @@ auto gtk_xournal_new(XournalView* view, InputContext* inputContext) -> GtkWidget
     GtkXournal* xoj = GTK_XOURNAL(g_object_new(gtk_xournal_get_type(), nullptr));
     xoj->view = view;
     xoj->scrollHandling = inputContext->getScrollHandling();
-    xoj->x = 0;
-    xoj->y = 0;
     xoj->layout = new Layout(view, inputContext->getScrollHandling());
     xoj->selection = nullptr;
+    xoj->setsquareView = nullptr;
 
     xoj->input = inputContext;
 
@@ -73,10 +80,8 @@ auto gtk_xournal_new(XournalView* view, InputContext* inputContext) -> GtkWidget
     return GTK_WIDGET(xoj);
 }
 
-static void gtk_xournal_class_init(GtkXournalClass* klass) {
-    GtkWidgetClass* widget_class = nullptr;
-
-    widget_class = reinterpret_cast<GtkWidgetClass*>(klass);
+static void gtk_xournal_class_init(GtkXournalClass* cptr) {
+    auto* widget_class = reinterpret_cast<GtkWidgetClass*>(cptr);
 
     widget_class->realize = gtk_xournal_realize;
     widget_class->get_preferred_width = gtk_xournal_get_preferred_width;
@@ -85,10 +90,10 @@ static void gtk_xournal_class_init(GtkXournalClass* klass) {
 
     widget_class->draw = gtk_xournal_draw;
 
-    widget_class->destroy = gtk_xournal_destroy;
+    reinterpret_cast<GObjectClass*>(widget_class)->dispose = gtk_xournal_dispose;
 }
 
-auto gtk_xournal_get_visible_area(GtkWidget* widget, XojPageView* p) -> Rectangle<double>* {
+auto gtk_xournal_get_visible_area(GtkWidget* widget, const XojPageView* p) -> Rectangle<double>* {
     g_return_val_if_fail(widget != nullptr, nullptr);
     g_return_val_if_fail(GTK_IS_XOURNAL(widget), nullptr);
 
@@ -176,7 +181,6 @@ static void gtk_xournal_size_allocate(GtkWidget* widget, GtkAllocation* allocati
 
 static void gtk_xournal_realize(GtkWidget* widget) {
     GdkWindowAttr attributes;
-    guint attributes_mask = 0;
 
     g_return_if_fail(widget != nullptr);
     g_return_if_fail(GTK_IS_XOURNAL(widget));
@@ -197,7 +201,7 @@ static void gtk_xournal_realize(GtkWidget* widget) {
     attributes.wclass = GDK_INPUT_OUTPUT;
     attributes.event_mask = gtk_widget_get_events(widget) | GDK_EXPOSURE_MASK;
 
-    attributes_mask = GDK_WA_X | GDK_WA_Y;
+    gint attributes_mask = GDK_WA_X | GDK_WA_Y;
 
     gtk_widget_set_window(widget, gdk_window_new(gtk_widget_get_parent_window(widget), &attributes, attributes_mask));
     gdk_window_set_user_data(gtk_widget_get_window(widget), widget);
@@ -256,13 +260,6 @@ void gtk_xournal_repaint_area(GtkWidget* widget, int x1, int y1, int x2, int y2)
     g_return_if_fail(widget != nullptr);
     g_return_if_fail(GTK_IS_XOURNAL(widget));
 
-    GtkXournal* xournal = GTK_XOURNAL(widget);
-
-    x1 -= xournal->x;
-    x2 -= xournal->x;
-    y1 -= xournal->y;
-    y2 -= xournal->y;
-
     if (x2 < 0 || y2 < 0) {
         return;  // outside visible area
     }
@@ -290,9 +287,9 @@ static auto gtk_xournal_draw(GtkWidget* widget, cairo_t* cr) -> gboolean {
     // Draw background
     Settings* settings = xournal->view->getControl()->getSettings();
     Util::cairo_set_source_rgbi(cr, settings->getBackgroundColor());
-    cairo_rectangle(cr, x1, y1, x2 - x1, y2 - y1);
-    cairo_fill(cr);
+    cairo_paint(cr);
 
+    // Add a padding for the shadow of the pages
     Rectangle clippingRect(x1 - 10, y1 - 10, x2 - x1 + 20, y2 - y1 + 20);
 
     for (auto&& pv: xournal->view->getViewPages()) {
@@ -315,25 +312,41 @@ static auto gtk_xournal_draw(GtkWidget* widget, cairo_t* cr) -> gboolean {
     }
 
     if (xournal->selection) {
+        cairo_save(cr);
         double zoom = xournal->view->getZoom();
 
-        Redrawable* red = xournal->selection->getView();
+        LegacyRedrawable* red = xournal->selection->getView();
         cairo_translate(cr, red->getX(), red->getY());
 
         xournal->selection->paint(cr, zoom);
+        cairo_restore(cr);
+    }
+
+    if (xournal->setsquareView) {
+        auto&& pv = xournal->setsquareView->getView();
+        int px = pv->getX();
+        int py = pv->getY();
+
+        if (clippingRect.intersects(pv->getRect())) {
+            cairo_save(cr);
+            cairo_translate(cr, px, py);
+            xournal->setsquareView->paint(cr);
+            cairo_restore(cr);
+        }
     }
 
     return true;
 }
 
-static void gtk_xournal_destroy(GtkWidget* object) {
+static void gtk_xournal_dispose(GObject* object) {
     g_return_if_fail(object != nullptr);
     g_return_if_fail(GTK_IS_XOURNAL(object));
-
     GtkXournal* xournal = GTK_XOURNAL(object);
 
     delete xournal->selection;
     xournal->selection = nullptr;
+
+    xournal->setsquareView = nullptr;
 
     delete xournal->layout;
     xournal->layout = nullptr;

@@ -11,19 +11,18 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include "Attribute.h"  // for XMLAttribute
 
-#include "Attribute.h"
+class OutputStream;
 
 
 class DoubleAttribute: public XMLAttribute {
 public:
     DoubleAttribute(const char* name, double value);
-    virtual ~DoubleAttribute();
+    ~DoubleAttribute() override;
 
 public:
-    virtual void writeOut(OutputStream* out);
+    void writeOut(OutputStream* out) override;
 
 private:
     double value;

@@ -1,29 +1,35 @@
 #include "ToolMenuHandler.h"
 
-#include <sstream>
-#include <utility>
+#include <algorithm>  // for max
+#include <sstream>    // for istringstream
 
-#include <config-features.h>
-#include <config.h>
+#include "control/Control.h"                         // for Control
+#include "control/PageBackgroundChangeController.h"  // for PageBackgroundCh...
+#include "control/pagetype/PageTypeMenu.h"           // for PageTypeMenu
+#include "control/settings/Settings.h"               // for Settings
+#include "gui/GladeGui.h"                            // for GladeGui
+#include "gui/ToolitemDragDrop.h"                    // for ToolitemDragDrop
+#include "gui/toolbarMenubar/AbstractToolItem.h"     // for AbstractToolItem
+#include "gui/toolbarMenubar/ColorToolItem.h"        // for ColorToolItem
+#include "gui/toolbarMenubar/model/ColorPalette.h"   // for Palette
+#include "gui/toolbarMenubar/model/ToolbarData.h"    // for ToolbarData
+#include "gui/toolbarMenubar/model/ToolbarEntry.h"   // for ToolbarEntry
+#include "gui/toolbarMenubar/model/ToolbarItem.h"    // for ToolbarItem
+#include "gui/toolbarMenubar/model/ToolbarModel.h"   // for ToolbarModel
+#include "model/Font.h"                              // for XojFont
+#include "util/NamedColor.h"                         // for NamedColor
+#include "util/StringUtils.h"                        // for StringUtils
+#include "util/i18n.h"                               // for _
 
-#include "control/Actions.h"
-#include "control/Control.h"
-#include "control/PageBackgroundChangeController.h"
-#include "gui/ToolitemDragDrop.h"
-#include "gui/toolbarMenubar/model/ColorPalette.h"
-#include "gui/toolbarMenubar/model/ToolbarData.h"
-#include "gui/toolbarMenubar/model/ToolbarModel.h"
-#include "util/StringUtils.h"
-#include "util/i18n.h"
-
-#include "FontButton.h"
-#include "MenuItem.h"
-#include "ToolButton.h"
-#include "ToolDrawCombocontrol.h"
-#include "ToolPageLayer.h"
-#include "ToolPageSpinner.h"
-#include "ToolSelectCombocontrol.h"
-#include "ToolZoomSlider.h"
+#include "FontButton.h"              // for FontButton
+#include "MenuItem.h"                // for MenuItem
+#include "ToolButton.h"              // for ToolButton
+#include "ToolDrawCombocontrol.h"    // for ToolDrawCombocon...
+#include "ToolPageLayer.h"           // for ToolPageLayer
+#include "ToolPageSpinner.h"         // for ToolPageSpinner
+#include "ToolPdfCombocontrol.h"     // for ToolPdfCombocontrol
+#include "ToolSelectCombocontrol.h"  // for ToolSelectComboc...
+#include "ToolZoomSlider.h"          // for ToolZoomSlider
 
 using std::string;
 
@@ -72,9 +78,13 @@ ToolMenuHandler::~ToolMenuHandler() {
 }
 
 void ToolMenuHandler::freeDynamicToolbarItems() {
-    for (AbstractToolItem* it: this->toolItems) { it->setUsed(false); }
+    for (AbstractToolItem* it: this->toolItems) {
+        it->setUsed(false);
+    }
 
-    for (ColorToolItem* it: this->toolbarColorItems) { delete it; }
+    for (ColorToolItem* it: this->toolbarColorItems) {
+        delete it;
+    }
     this->toolbarColorItems.clear();
 }
 
@@ -236,11 +246,17 @@ void ToolMenuHandler::addColorToolItem(AbstractToolItem* it) {
 }
 
 void ToolMenuHandler::setTmpDisabled(bool disabled) {
-    for (AbstractToolItem* it: this->toolItems) { it->setTmpDisabled(disabled); }
+    for (AbstractToolItem* it: this->toolItems) {
+        it->setTmpDisabled(disabled);
+    }
 
-    for (MenuItem* it: this->menuItems) { it->setTmpDisabled(disabled); }
+    for (MenuItem* it: this->menuItems) {
+        it->setTmpDisabled(disabled);
+    }
 
-    for (ColorToolItem* it: this->toolbarColorItems) { it->setTmpDisabled(disabled); }
+    for (ColorToolItem* it: this->toolbarColorItems) {
+        it->setTmpDisabled(disabled);
+    }
 
     GtkWidget* menuViewSidebarVisible = gui->get("menuViewSidebarVisible");
     gtk_widget_set_sensitive(menuViewSidebarVisible, !disabled);
@@ -392,6 +408,7 @@ void ToolMenuHandler::initToolItems() {
                      _("Rotation Snapping"));
     addCustomItemTgl("GRID_SNAPPING", ACTION_GRID_SNAPPING, GROUP_GRID_SNAPPING, false, "snapping-grid",
                      _("Grid Snapping"));
+    addCustomItemTgl("SETSQUARE", ACTION_SETSQUARE, GROUP_SETSQUARE, false, "setsquare", _("Setsquare"));
 
     /*
      * Menu View
@@ -466,14 +483,20 @@ void ToolMenuHandler::initToolItems() {
     addCustomItemTgl("HIGHLIGHTER", ACTION_TOOL_HIGHLIGHTER, GROUP_TOOL, true, "tool-highlighter", _("Highlighter"));
 
     addCustomItemTgl("TEXT", ACTION_TOOL_TEXT, GROUP_TOOL, true, "tool-text", _("Text"));
-    addCustomItem("MATH_TEX", ACTION_TEX, "tool-math-tex", _("Add/Edit Tex"));
+    addCustomItem("MATH_TEX", ACTION_TEX, "tool-math-tex", _("Add/Edit TeX"));
     addCustomItemTgl("IMAGE", ACTION_TOOL_IMAGE, GROUP_TOOL, true, "tool-image", _("Image"));
     addCustomItem("DEFAULT_TOOL", ACTION_TOOL_DEFAULT, "default", _("Default Tool"));
     addCustomItemTgl("SHAPE_RECOGNIZER", ACTION_SHAPE_RECOGNIZER, GROUP_RULER, false, "shape-recognizer",
                      _("Shape Recognizer"));
+    addCustomItemTgl("SELECT_PDF_TEXT_LINEAR", ACTION_TOOL_SELECT_PDF_TEXT_LINEAR, GROUP_TOOL, true,
+                     "select-pdf-text-ht", _("Select Linear PDF Text"));
+    addCustomItemTgl("SELECT_PDF_TEXT_RECT", ACTION_TOOL_SELECT_PDF_TEXT_RECT, GROUP_TOOL, true, "select-pdf-text-area",
+                     _("Select PDF Text in Rectangle"));
     addCustomItemTgl("DRAW_RECTANGLE", ACTION_TOOL_DRAW_RECT, GROUP_RULER, false, "draw-rect", _("Draw Rectangle"));
     addCustomItemTgl("DRAW_ELLIPSE", ACTION_TOOL_DRAW_ELLIPSE, GROUP_RULER, false, "draw-ellipse", _("Draw Ellipse"));
     addCustomItemTgl("DRAW_ARROW", ACTION_TOOL_DRAW_ARROW, GROUP_RULER, false, "draw-arrow", _("Draw Arrow"));
+    addCustomItemTgl("DRAW_DOUBLE_ARROW", ACTION_TOOL_DRAW_DOUBLE_ARROW, GROUP_RULER, false, "draw-double-arrow",
+                     _("Draw Double Arrow"));
     addCustomItemTgl("DRAW_COORDINATE_SYSTEM", ACTION_TOOL_DRAW_COORDINATE_SYSTEM, GROUP_RULER, false,
                      "draw-coordinate-system", _("Draw coordinate system"));
     addCustomItemTgl("RULER", ACTION_RULER, GROUP_RULER, false, "draw-line", _("Draw Line"));
@@ -519,18 +542,18 @@ void ToolMenuHandler::initToolItems() {
      * Footer tools
      * ------------------------------------------------------------------------
      */
-    toolPageSpinner = new ToolPageSpinner(gui, listener, "PAGE_SPIN", ACTION_FOOTER_PAGESPIN, iconNameHelper);
+    toolPageSpinner = new ToolPageSpinner(listener, "PAGE_SPIN", ACTION_FOOTER_PAGESPIN, iconNameHelper);
     addToolItem(toolPageSpinner);
 
     auto* toolZoomSlider = new ToolZoomSlider("ZOOM_SLIDER", listener, ACTION_FOOTER_ZOOM_SLIDER, zoom, iconNameHelper);
     addToolItem(toolZoomSlider);
 
-    toolPageLayer = new ToolPageLayer(control->getLayerController(), gui, listener, "LAYER", ACTION_FOOTER_LAYER,
-                                      iconNameHelper);
+    toolPageLayer =
+            new ToolPageLayer(control->getLayerController(), listener, "LAYER", ACTION_FOOTER_LAYER, iconNameHelper);
     addToolItem(toolPageLayer);
 
     addCustomItemTgl("TOOL_FILL", ACTION_TOOL_FILL, GROUP_FILL, false, "fill", _("Fill"));
-
+    addCustomItem("PEN_FILL_OPACITY", ACTION_TOOL_PEN_FILL_OPACITY, "pen-fill-opacity", _("Fill Opacity"));
 
     /*
      * Non-menu items
@@ -545,6 +568,7 @@ void ToolMenuHandler::initToolItems() {
 
     addToolItem(new ToolSelectCombocontrol(this, listener, "SELECT"));
     addToolItem(new ToolDrawCombocontrol(this, listener, "DRAW"));
+    addToolItem(new ToolPdfCombocontrol(this, listener, "PDF_TOOL"));
 
     // General tool configuration - working for every tool which support it
     addCustomItemTgl("VERY_FINE", ACTION_SIZE_VERY_FINE, GROUP_SIZE, true, "thickness-finer", _("Very Fine"));
@@ -596,6 +620,8 @@ auto ToolMenuHandler::isColorInUse(Color color) -> bool {
 }
 
 auto ToolMenuHandler::getToolItems() -> std::vector<AbstractToolItem*>* { return &this->toolItems; }
+
+auto ToolMenuHandler::getColorToolItems() const -> const std::vector<ColorToolItem*>& { return this->toolbarColorItems; }
 
 void ToolMenuHandler::disableAudioPlaybackButtons() {
     setAudioPlaybackPaused(false);

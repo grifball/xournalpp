@@ -11,13 +11,15 @@
 
 #pragma once
 
-#include <vector>
+#include <cstddef>  // for size_t
+#include <vector>   // for vector
 
-#include <gtk/gtk.h>
+#include <gdk/gdk.h>  // for GdkEvent, GdkEventScroll, GdkEve...
+#include <gtk/gtk.h>  // for GtkWidget
 
-#include "model/DocumentListener.h"
-#include "util/Point.h"
-#include "util/Rectangle.h"
+#include "model/DocumentListener.h"  // for DocumentListener
+#include "util/Point.h"              // for Point
+#include "util/Rectangle.h"          // for Rectangle
 
 constexpr auto DEFAULT_ZOOM_MAX{7};
 constexpr auto DEFAULT_ZOOM_MIN{0.3};
@@ -28,14 +30,12 @@ enum ZoomDirection : bool { ZOOM_OUT = false, ZOOM_IN = true };
 
 class XournalView;
 class Control;
-class XojPageView;
 class ZoomListener;
-class DocumentListener;
 
 class ZoomControl: public DocumentListener {
 public:
     ZoomControl() = default;
-    virtual ~ZoomControl() = default;
+    ~ZoomControl() override = default;
 
     /**
      * Zoom one step
@@ -118,6 +118,7 @@ public:
     bool updateZoomPresentationValue(size_t pageNo = 0);
 
     void addZoomListener(ZoomListener* listener);
+    void removeZoomListener(ZoomListener* listener);
 
     void initZoomHandler(GtkWidget* window, GtkWidget* widget, XournalView* v, Control* c);
 
@@ -156,7 +157,7 @@ public:
     utl::Point<double> getScrollPositionAfterZoom() const;
 
     /// Get visible rect on xournal view, for Zoom Gesture
-    Rectangle<double> getVisibleRect();
+    xoj::util::Rectangle<double> getVisibleRect();
 
     void setZoomStep(double zoomStep);
 
@@ -166,8 +167,8 @@ protected:
     void fireZoomChanged();
     void fireZoomRangeValueChanged();
 
-    void pageSizeChanged(size_t page);
-    void pageSelected(size_t page);
+    void pageSizeChanged(size_t page) override;
+    void pageSelected(size_t page) override;
 
 private:
     void zoomFit();

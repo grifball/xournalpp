@@ -11,13 +11,17 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-
 // GtkRange
-#include <gtk/gtk.h>
+#include <memory>  // for unique_ptr
+#include <string>  // for string
 
-#include "AbstractToolItem.h"
+#include <gtk/gtk.h>  // for GtkToolItem, GtkRange
+
+#include "enums/ActionType.enum.h"  // for ActionType
+
+#include "AbstractToolItem.h"  // for AbstractToolItem
+
+class ActionHandler;
 
 class AbstractSliderItem: public AbstractToolItem {
 public:
@@ -39,10 +43,10 @@ public:
      * @param range The minimum/maximum/step in internal units. {@see #scaleFunc}.
      */
     AbstractSliderItem(std::string id, ActionHandler* handler, ActionType type, SliderRange range);
-    virtual ~AbstractSliderItem();
+    ~AbstractSliderItem() override;
 
-    virtual GtkToolItem* createItem(bool horizontal) override;
-    virtual GtkToolItem* createTmpItem(bool horizontal) override;
+    GtkToolItem* createItem(bool horizontal) override;
+    GtkToolItem* createTmpItem(bool horizontal) override;
 
 protected:
     GtkToolItem* newItem() override;
@@ -90,7 +94,7 @@ protected:
     /**
      * @param enabled `true` iff the slider should respond to user input.
      */
-    virtual void enable(bool enabled) override;
+    void enable(bool enabled) override;
 
     /**
      * @param x Actual value of the slider.
@@ -108,5 +112,6 @@ protected:
 
 private:
     class Impl;
+
     std::unique_ptr<Impl> pImpl;
 };

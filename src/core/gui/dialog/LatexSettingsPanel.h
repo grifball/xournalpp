@@ -11,10 +11,12 @@
 
 #pragma once
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkToggleButton, GtkFileChooser, GtkWidget
 
-#include "control/settings/LatexSettings.h"
-#include "gui/GladeGui.h"
+#include "gui/GladeGui.h"  // for GladeGui
+
+class GladeSearchpath;
+class LatexSettings;
 
 class LatexSettingsPanel: public GladeGui {
 public:
@@ -23,7 +25,7 @@ public:
     LatexSettingsPanel& operator=(const LatexSettingsPanel&) = delete;
     LatexSettingsPanel(const LatexSettingsPanel&&) = delete;
     LatexSettingsPanel& operator=(const LatexSettingsPanel&&) = delete;
-    virtual ~LatexSettingsPanel();
+    ~LatexSettingsPanel() override;
 
     void show(GtkWindow* parent) override;
 
@@ -33,6 +35,14 @@ public:
 private:
     void checkDeps();
 
+    /**
+     * @brief Update whether options accept input ("grayed-out" or not)
+     *    based on the current panel state.
+     */
+    void updateWidgetSensitivity();
+
     GtkToggleButton* cbAutoDepCheck;
     GtkFileChooser* globalTemplateChooser;
+    GtkWidget* sourceViewThemeSelector;
+    GtkToggleButton* cbUseSystemFont;
 };

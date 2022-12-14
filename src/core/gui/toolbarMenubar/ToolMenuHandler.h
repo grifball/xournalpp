@@ -11,13 +11,18 @@
 
 #pragma once
 
-#include <gtk/gtk.h>
+#include <cstddef>  // for size_t
+#include <string>   // for string
+#include <vector>   // for vector
 
-#include "control/Actions.h"
-#include "gui/IconNameHelper.h"
+#include <glib-object.h>  // for GObject, GConnectFlags
+#include <glib.h>         // for gchar
+#include <gtk/gtk.h>      // for GtkWidget, GtkWindow, GtkBuilder
 
-#include "ColorToolItem.h"
-#include "MenuItem.h"
+#include "enums/ActionGroup.enum.h"  // for GROUP_NOGROUP, ActionGroup
+#include "enums/ActionType.enum.h"   // for ActionType
+#include "gui/IconNameHelper.h"      // for IconNameHelper
+#include "util/Color.h"              // for Color
 
 class AbstractToolItem;
 class FontButton;
@@ -34,6 +39,9 @@ class XojFont;
 class ZoomControl;
 class Control;
 class PageBackgroundChangeController;
+class ActionHandler;
+class ColorToolItem;
+class MenuItem;
 
 class ToolMenuHandler {
 public:
@@ -50,7 +58,7 @@ public:
      *
      * @param d Data Object representing the selected toolbars (e.g Portrait)
      * @param toolbar reference to the widget representing the toolbar
-     * @param toolbarName tollbarName which should be read from the file
+     * @param toolbarName toolbarName which should be read from the file
      * @param horizontal whether the toolbar is horizontal
      */
     void load(ToolbarData* d, GtkWidget* toolbar, const char* toolbarName, bool horizontal);
@@ -78,6 +86,7 @@ public:
     ToolbarModel* getModel();
 
     std::vector<AbstractToolItem*>* getToolItems();
+    const std::vector<ColorToolItem*>& getColorToolItems() const;
 
     Control* getControl();
 

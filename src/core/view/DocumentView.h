@@ -11,28 +11,21 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cairo.h>  // for cairo_t
 
-#include <gtk/gtk.h>
+#include "model/PageRef.h"  // for PageRef
+#include "util/ElementRange.h"
 
-#include "model/Element.h"
-#include "model/Image.h"
-#include "model/PageRef.h"
-#include "model/Stroke.h"
-#include "model/TexImage.h"
-#include "model/Text.h"
+class PdfCache;
 
-#include "ElementContainer.h"
-
-
-class EditSelection;
-class MainBackgroundPainter;
+namespace xoj::view {
+struct BackgroundFlags;
+};
 
 class DocumentView {
 public:
-    DocumentView();
-    virtual ~DocumentView();
+    DocumentView() = default;
+    virtual ~DocumentView() = default;
 
 public:
     /**
@@ -47,16 +40,19 @@ public:
     void drawPage(PageRef page, cairo_t* cr, bool dontRenderEditingStroke, bool hidePdfBackground = false,
                   bool hideImageBackground = false, bool hideRulingBackground = false);
 
-
-    void drawStroke(cairo_t* cr, Stroke* s, bool noColor = false) const;
-
-    static void applyColor(cairo_t* cr, Stroke* s);
-    static void applyColor(cairo_t* cr, Color c, uint8_t alpha = 0xff);
-    static void applyColor(cairo_t* cr, Element* e, uint8_t alpha = 0xff);
-
-    void limitArea(double x, double y, double width, double height);
-
-    void drawSelection(cairo_t* cr, ElementContainer* container);
+    /**
+     * Only draws the prescribed layers of the given page, regardless of the layer's current visibility.
+     * @param layerRange Range of layers to draw
+     * @param page The page to draw
+     * @param cr Draw to this context
+     * @param dontRenderEditingStroke false to draw currently drawing stroke
+     * @param hidePdfBackground true to hide the PDF background
+     * @param hideImageBackground true to hide the PDF background
+     * @param hideRulingBacground true to hide the ruling background
+     */
+    void drawLayersOfPage(const LayerRangeVector& layerRange, PageRef page, cairo_t* cr, bool dontRenderEditingStroke,
+                          bool hidePdfBackground = false, bool hideImageBackground = false,
+                          bool hideRulingBackground = false);
 
     /**
      * Mark stroke with Audio
@@ -65,6 +61,8 @@ public:
 
     // API for special drawing, usually you won't call this methods
 public:
+    void setPdfCache(PdfCache* cache);
+
     /**
      * Drawing first step
      * @param page The page to draw
@@ -76,8 +74,7 @@ public:
     /**
      * Draw the background
      */
-    void drawBackground(bool hidePdfBackground = false, bool hideImageBackground = false,
-                        bool hideRulingBackground = false);
+    void drawBackground(xoj::view::BackgroundFlags bgFlags) const;
 
     /**
      * Draw background if there is no background shown, like in GIMP etc.
@@ -85,38 +82,15 @@ public:
     void drawTransparentBackgroundPattern();
 
     /**
-     * Draw a single layer
-     * @param cr Draw to thgis context
-     * @param l The layer to draw
-     */
-    void drawLayer(cairo_t* cr, Layer* l);
-
-    /**
      * Last step in drawing
      */
     void finializeDrawing();
 
 private:
-    void drawText(cairo_t* cr, Text* t) const;
-    void drawImage(cairo_t* cr, Image* i) const;
-    void drawTexImage(cairo_t* cr, TexImage* texImage) const;
-
-    void drawElement(cairo_t* cr, Element* e) const;
-
-    void paintBackgroundImage();
-
-private:
     cairo_t* cr = nullptr;
     PageRef page = nullptr;
-    double width = 0;
-    double height = 0;
+    PdfCache* pdfCache = nullptr;
     bool dontRenderEditingStroke = false;
     bool markAudioStroke = false;
 
-    double lX = -1;
-    double lY = -1;
-    double lWidth = -1;
-    double lHeight = -1;
-
-    MainBackgroundPainter* backgroundPainter;
 };

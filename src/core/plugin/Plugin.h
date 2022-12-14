@@ -11,20 +11,23 @@
 
 #pragma once
 
-#include "config-features.h"
+#include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
+
+#include "config-features.h"  // for ENABLE_PLUGINS
 
 #ifdef ENABLE_PLUGINS
 
-#include <string>
-#include <utility>
-#include <vector>
+#include <string>   // for string
+#include <utility>  // for move
+#include <vector>   // for vector
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkWidget, GtkWindow
 
-#include "filesystem.h"
+#include "filesystem.h"  // for path
 
 extern "C" {
-#include <lua.h>
+#include <lua.h>  // for lua_State, lua_close
 }
 
 class Plugin;
@@ -32,13 +35,18 @@ class Control;
 
 struct MenuEntry final {
     MenuEntry() = default;
-    MenuEntry(Plugin* plugin, std::string menu, std::string callback, std::string accelerator):
-            plugin(plugin), menu(std::move(menu)), callback(std::move(callback)), accelerator(std::move(accelerator)) {}
+    MenuEntry(Plugin* plugin, std::string menu, std::string callback, long mode, std::string accelerator):
+            plugin(plugin),
+            menu(std::move(menu)),
+            callback(std::move(callback)),
+            mode(mode),
+            accelerator(std::move(accelerator)) {}
 
     GtkWidget* widget = nullptr;  ///< Menu item
     Plugin* plugin = nullptr;     ///< The Plugin
     std::string menu{};           ///< Menu display name
     std::string callback{};       ///< Callback function name
+    long mode{LONG_MAX};          ///< mode in which the callback function is run
     std::string accelerator{};
     ///< Accelerator key, see
     ///< https://developer.gnome.org/gtk3/stable/gtk3-Keyboard-Accelerators.html#gtk-accelerator-parse
@@ -80,6 +88,9 @@ public:
     /// Plugin version
     auto getVersion() const -> std::string const&;
 
+    /// @return the path to the plugin folder. Each plugin should have a unique path.
+    auto getPath() const -> fs::path const&;
+
     /// The plugin is enabled
     auto isEnabled() const -> bool;
 
@@ -94,7 +105,7 @@ public:
 
     /// Register a menu item
     /// @return Internal ID, can e.g. be used to disable the menu
-    auto registerMenu(std::string menu, std::string callback, std::string accelerator) -> size_t;
+    auto registerMenu(std::string menu, std::string callback, long mode, std::string accelerator) -> size_t;
 
     ///@return The main controller
     auto getControl() const -> Control*;
@@ -104,7 +115,7 @@ private:
     void loadIni();
 
     /// Execute lua function
-    auto callFunction(const std::string& fnc) -> bool;
+    auto callFunction(const std::string& fnc, long mode = LONG_MAX) -> bool;
 
     /// Load custom Lua Libraries
     static void registerXournalppLibs(lua_State* luaPtr);
@@ -134,5 +145,5 @@ private:
 };
 
 #else
-struct Plugin final {};  ///< empty struct, since Plugin is not compiled
+struct Plugin final {};  ///< empty struct, since Plugins are not available
 #endif

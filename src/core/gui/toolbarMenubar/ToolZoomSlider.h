@@ -11,21 +11,26 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
+#include <memory>  // for unique_ptr
+#include <string>  // for string
 
-#include "control/zoom/ZoomListener.h"
-#include "gui/IconNameHelper.h"
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gtk/gtk.h>                // for GtkRange, GtkWidget
 
-#include "AbstractSliderItem.h"
+#include "control/zoom/ZoomListener.h"  // for ZoomListener
+#include "enums/ActionType.enum.h"      // for ActionType
+#include "gui/IconNameHelper.h"         // for IconNameHelper
+
+#include "AbstractSliderItem.h"  // for AbstractSliderItem
 
 class ZoomControl;
+class ActionHandler;
 
 class ToolZoomSlider: public AbstractSliderItem, public ZoomListener {
 public:
     ToolZoomSlider(std::string id, ActionHandler* handler, ActionType type, ZoomControl* zoom,
                    IconNameHelper iconNameHelper);
-    virtual ~ToolZoomSlider();
+    ~ToolZoomSlider() override;
 
 protected:
     void onSliderChanged(double value) override;
@@ -33,21 +38,22 @@ protected:
     void onSliderButtonRelease() override;
     void onSliderHoverScroll() override;
     std::string formatSliderValue(double value) const override;
-    virtual void configure(GtkRange* slider, bool isHorizontal) const;
+    void configure(GtkRange* slider, bool isHorizontal) const override;
 
     void zoomChanged() override;
     void zoomRangeValuesChanged() override;
 
-    virtual std::string getToolDisplayName() const override;
+    std::string getToolDisplayName() const override;
 
 protected:
-    virtual GtkWidget* getNewToolIcon() const override;
-    virtual GdkPixbuf* getNewToolPixbuf() const override;
+    GtkWidget* getNewToolIcon() const override;
+    GdkPixbuf* getNewToolPixbuf() const override;
 
     double scaleFunc(double x) const override;
     double scaleFuncInv(double x) const override;
 
 private:
     class Impl;
+
     std::unique_ptr<Impl> pImpl;
 };

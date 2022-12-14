@@ -11,12 +11,12 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <vector>  // for vector
 
-#include <gtk/gtk.h>
+#include <glib.h>     // for gulong
+#include <gtk/gtk.h>  // for GtkWidget, GtkRecentInfo
 
-#include "filesystem.h"
+#include "filesystem.h"  // for path
 
 class RecentManagerListener {
 public:
@@ -80,43 +80,14 @@ public:
 
     /**
      * Returns the most recent xoj item from the underlying GtkRecentManager
+     * or nullptr, if no recent files exist
      */
     GtkRecentInfo* getMostRecent();
 
 private:
-    /**
-     * Filters a list of GtkRecentInfo according to their file types
-     *
-     * @param items A pointer to a GList containing GtkRecentInfo%s
-     * @param xoj   Returns xoj files if xoj is set, pdf files otherwise
-     *
-     * @return      A pointer to a GList containing the relevant GtkRecentInfo%s sorted according to their
-     *              modification dates
-     */
-    static GList* filterRecent(GList* items, bool xoj);
     void addRecentMenu(GtkRecentInfo* info, int i);
 
-    /**
-     * This callback function is triggered whenever a new
-     * file is added to the recent manager to recreate
-     * all of the menu items
-     */
-    static void recentManagerChangedCallback(GtkRecentManager* manager, RecentManager* recentManager);
-
-    /**
-     * This callback function is triggered whenever one of
-     * the items corresponding to recent files is activated
-     */
-    static void recentsMenuActivateCallback(GtkAction* action, RecentManager* recentManager);
-
-    /**
-     * This function serves as a comparator to sort different
-     * GtkRecentInfo%s according to their modification date
-     */
-    static auto sortRecentsEntries(GtkRecentInfo* a, GtkRecentInfo* b) -> gint;
-
 private:
-    int maxRecent = 10;
     gulong recentHandlerId{};
 
     std::vector<RecentManagerListener*> listener;

@@ -11,18 +11,18 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>   // for size_t
+#include <optional>  // for optional
+#include <string>    // for string
+#include <vector>    // for vector
 
-#include "util/Util.h"
+#include "util/Color.h"  // for Color
+#include "util/Util.h"   // for npos
 
-#include "BackgroundImage.h"
-#include "Layer.h"
-#include "PageHandler.h"
-#include "PageType.h"
-
-template <class T>
-using optional = std::optional<T>;
+#include "BackgroundImage.h"  // for BackgroundImage
+#include "Layer.h"            // for Layer, Layer::Index
+#include "PageHandler.h"      // for PageHandler
+#include "PageType.h"         // for PageType
 
 class XojPage: public PageHandler {
 public:
@@ -35,9 +35,9 @@ public:
     // So notification can be sent on change
 protected:
     void addLayer(Layer* layer);
-    void insertLayer(Layer* layer, int index);
+    void insertLayer(Layer* layer, Layer::Index index);
     void removeLayer(Layer* layer);
-    void setLayerVisible(int layerId, bool visible);
+    void setLayerVisible(Layer::Index layerId, bool visible);
 
 public:
     // Also set the size over doc->setPageSize!
@@ -56,7 +56,7 @@ public:
 
     size_t getPdfPageNr() const;
 
-    bool isAnnotated();
+    bool isAnnotated() const;
     bool bookmarked = false;
     bool isBookmarked();
 
@@ -64,11 +64,10 @@ public:
     Color getBackgroundColor() const;
 
     std::vector<Layer*>* getLayers();
-    size_t getLayerCount();
-    int getSelectedLayerId();
-    void setSelectedLayerId(int id);
-    static bool isLayerVisible(Layer* layer);
-    bool isLayerVisible(int layerId);
+    Layer::Index getLayerCount() const;
+    Layer::Index getSelectedLayerId();
+    void setSelectedLayerId(Layer::Index id);
+    bool isLayerVisible(Layer::Index layerId) const;
 
     Layer* getSelectedLayer();
 
@@ -104,7 +103,7 @@ private:
     /**
      * The current selected layer ID
      */
-    size_t currentLayer = npos;
+    Layer::Index currentLayer = npos;
 
     /**
      * The Background Type of the page
@@ -119,7 +118,7 @@ private:
     /**
      * The background color if the background type is plain
      */
-    Color backgroundColor{0xffffffU};
+    Color backgroundColor{Colors::white};
 
     /**
      * Background visible
@@ -129,7 +128,7 @@ private:
     /**
      * Background name
      */
-    optional<std::string> backgroundName;
+    std::optional<std::string> backgroundName;
 
     // Allow LoadHandler to add layers directly
     friend class LoadHandler;

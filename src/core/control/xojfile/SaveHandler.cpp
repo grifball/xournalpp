@@ -1,26 +1,42 @@
 #include "SaveHandler.h"
 
-#include <cinttypes>
+#include <cinttypes>  // for PRIx32, uint32_t
+#include <cstdio>     // for sprintf, size_t
+#include <filesystem> // for exists
 
-#include <config.h>
+#include <cairo.h>                  // for cairo_surface_t
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for gdk_pixbuf_save
+#include <glib.h>                   // for g_free, g_strdup_printf
 
-#include "control/jobs/ProgressListener.h"
-#include "control/pagetype/PageTypeHandler.h"
-#include "control/xml/XmlImageNode.h"
-#include "control/xml/XmlNode.h"
-#include "control/xml/XmlPointNode.h"
-#include "control/xml/XmlTexNode.h"
-#include "control/xml/XmlTextNode.h"
-#include "model/BackgroundImage.h"
-#include "model/Document.h"
-#include "model/Image.h"
-#include "model/Layer.h"
-#include "model/Stroke.h"
-#include "model/StrokeStyle.h"
-#include "model/TexImage.h"
-#include "model/Text.h"
-#include "util/PathUtil.h"
-#include "util/i18n.h"
+#include "control/pagetype/PageTypeHandler.h"  // for PageTypeHandler
+#include "control/xml/XmlAudioNode.h"          // for XmlAudioNode
+#include "control/xml/XmlImageNode.h"          // for XmlImageNode
+#include "control/xml/XmlNode.h"               // for XmlNode
+#include "control/xml/XmlPointNode.h"          // for XmlPointNode
+#include "control/xml/XmlTexNode.h"            // for XmlTexNode
+#include "control/xml/XmlTextNode.h"           // for XmlTextNode
+#include "model/AudioElement.h"                // for AudioElement
+#include "model/BackgroundImage.h"             // for BackgroundImage
+#include "model/Document.h"                    // for Document
+#include "model/Element.h"                     // for Element, ELEMENT_IMAGE
+#include "model/Font.h"                        // for XojFont
+#include "model/Image.h"                       // for Image
+#include "model/Layer.h"                       // for Layer
+#include "model/LineStyle.h"                   // for LineStyle
+#include "model/PageType.h"                    // for PageType
+#include "model/Point.h"                       // for Point
+#include "model/Stroke.h"                      // for Stroke, StrokeCapStyle
+#include "model/StrokeStyle.h"                 // for StrokeStyle
+#include "model/TexImage.h"                    // for TexImage
+#include "model/Text.h"                        // for Text
+#include "model/XojPage.h"                     // for XojPage
+#include "pdf/base/XojPdfDocument.h"           // for XojPdfDocument
+#include "util/OutputStream.h"                 // for GzOutputStream, Output...
+#include "util/PathUtil.h"                     // for clearExtensions
+#include "util/PlaceholderString.h"            // for PlaceholderString
+#include "util/i18n.h"                         // for FS, _F
+
+#include "config.h"  // for FILE_FORMAT_VERSION
 
 SaveHandler::SaveHandler() {
     this->firstPdfPageVisited = false;
@@ -74,7 +90,7 @@ auto SaveHandler::getColorStr(Color c, unsigned char alpha) -> std::string {
 void SaveHandler::writeTimestamp(AudioElement* audioElement, XmlAudioNode* xmlAudioNode) {
     /** set stroke timestamp value to the XmlPointNode */
     xmlAudioNode->setAttrib("ts", audioElement->getTimestamp());
-    xmlAudioNode->setAttrib("fn", audioElement->getAudioFilename());
+    xmlAudioNode->setAttrib("fn", audioElement->getAudioFilename().u8string());
 }
 
 void SaveHandler::visitStroke(XmlPointNode* stroke, Stroke* s) {
@@ -82,12 +98,12 @@ void SaveHandler::visitStroke(XmlPointNode* stroke, Stroke* s) {
 
     unsigned char alpha = 0xff;
 
-    if (t == STROKE_TOOL_PEN) {
+    if (t == StrokeTool::PEN) {
         stroke->setAttrib("tool", "pen");
         writeTimestamp(s, stroke);
-    } else if (t == STROKE_TOOL_ERASER) {
+    } else if (t == StrokeTool::ERASER) {
         stroke->setAttrib("tool", "eraser");
-    } else if (t == STROKE_TOOL_HIGHLIGHTER) {
+    } else if (t == StrokeTool::HIGHLIGHTER) {
         stroke->setAttrib("tool", "highlighter");
         alpha = 0x7f;
     } else {
@@ -120,6 +136,18 @@ void SaveHandler::visitStroke(XmlPointNode* stroke, Stroke* s) {
 void SaveHandler::visitStrokeExtended(XmlPointNode* stroke, Stroke* s) {
     if (s->getFill() != -1) {
         stroke->setAttrib("fill", s->getFill());
+    }
+
+    const StrokeCapStyle capStyle = s->getStrokeCapStyle();
+    if (capStyle == StrokeCapStyle::BUTT) {
+        stroke->setAttrib("capStyle", "butt");
+    } else if (capStyle == StrokeCapStyle::ROUND) {
+        stroke->setAttrib("capStyle", "round");
+    } else if (capStyle == StrokeCapStyle::SQUARE) {
+        stroke->setAttrib("capStyle", "square");
+    } else {
+        g_warning("Unknown stroke cap type: %i", capStyle);
+        stroke->setAttrib("capStyle", "round");
     }
 
     if (s->getLineStyle().hasDashes()) {
@@ -209,7 +237,9 @@ void SaveHandler::visitPage(XmlNode* root, PageRef p, Document* doc, int id) {
                 background->setAttrib("filename", "bg.pdf");
 
                 GError* error = nullptr;
-                doc->getPdfDocument().save(filepath, &error);
+                if (!exists(filepath)) {
+                    doc->getPdfDocument().save(filepath, &error);
+                }
 
                 if (error) {
                     if (!this->errorMessage.empty()) {
@@ -267,7 +297,25 @@ void SaveHandler::writeSolidBackground(XmlNode* background, PageRef p) {
     background->setAttrib("type", "solid");
     background->setAttrib("color", getColorStr(p->getBackgroundColor()));
 
-    background->setAttrib("style", PageTypeHandler::getStringForPageTypeFormat(p->getBackgroundType().format));
+    if (auto fmt = p->getBackgroundType().format; fmt == PageTypeFormat::Copy) {
+        /*
+         * PageTypeFormat::Copy is just a placeholder for the various background related menus, indicating that the
+         * background should be copied from another page.
+         * IT SHOULD NEVER APPEAR IN AN ACTUAL PAGE MODEL OR A FORTIORI IN A SAVED FILE
+         *
+         * A page with background type PageTypeFormat::Copy is unwanted.
+         * To avoid creating corrupted files, we replace the format with PageTypeFormat::Plain
+         */
+        if (!this->errorMessage.empty()) {
+            this->errorMessage += "\n";
+        }
+        this->errorMessage += _("Page type format is PageTypeFormat::Copy - converted to PageTypeFormat::Plain to "
+                                "avoid corrupted file");
+
+        background->setAttrib("style", PageTypeHandler::getStringForPageTypeFormat(PageTypeFormat::Plain));
+    } else {
+        background->setAttrib("style", PageTypeHandler::getStringForPageTypeFormat(fmt));
+    }
 
     // Not compatible with Xournal, so the background needs
     // to be changed to a basic one!

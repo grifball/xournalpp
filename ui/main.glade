@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Generated with glade 3.38.2 -->
 <interface>
-  <requires lib="gtk+" version="3.10"/>
+  <requires lib="gtk+" version="3.18"/>
   <object class="GtkAdjustment" id="adjHorizontal">
     <property name="upper">100</property>
     <property name="step-increment">1</property>
@@ -108,7 +108,7 @@
             <property name="can-focus">False</property>
             <property name="margin-bottom">30</property>
             <property name="label" translatable="yes">&lt;b&gt;Empty Toolbox&lt;/b&gt;
-&lt;i&gt;Menu: View/Toolbars&lt;/i&gt;</property>
+            &lt;i&gt;Menu: View/Toolbars&lt;/i&gt;</property>
             <property name="use-markup">True</property>
             <property name="justify">center</property>
           </object>
@@ -219,8 +219,8 @@
                             <property name="use-underline">True</property>
                             <property name="use-stock">True</property>
                             <signal name="activate" handler="ACTION_SAVE_AS" swapped="no"/>
-                            <accelerator key="u" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                             <accelerator key="s" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                            <accelerator key="u" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -367,6 +367,7 @@
                             <property name="use-stock">True</property>
                             <signal name="activate" handler="ACTION_REDO" swapped="no"/>
                             <accelerator key="y" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                            <accelerator key="z" signal="activate" modifiers="GDK_CONTROL_MASK|GDK_SHIFT_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -418,6 +419,24 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkImageMenuItem" id="menuEditSelectAllOnPage">
+                            <property name="label">gtk-select-all</property>
+                            <property name="name">menuEditSelectAllOnPage</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="use-underline">True</property>
+                            <property name="use-stock">True</property>
+                            <signal name="activate" handler="ACTION_SELECT_ALL" swapped="no"/>
+                            <accelerator key="a" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="separatormenuitem18">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkImageMenuItem" id="menuEditSearch">
                             <property name="label">gtk-find</property>
                             <property name="name">menuEditSearch</property>
@@ -445,6 +464,32 @@
                             <property name="use-stock">True</property>
                             <signal name="activate" handler="ACTION_DELETE" swapped="no"/>
                             <accelerator key="Delete" signal="activate"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="separatormenuitem19">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="menuEditMoveSelectionLayerUp">
+                            <property name="name">menuEditMoveSelectionLayerUp</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Move Selection Layer Up</property>
+                            <property name="use-underline">True</property>
+                            <signal name="activate" handler="ACTION_MOVE_SELECTION_LAYER_UP" swapped="no"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="menuEditMoveSelectionLayerDown">
+                            <property name="name">menuEditMoveSelectionLayerDown</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Move Selection Layer Down</property>
+                            <property name="use-underline">True</property>
+                            <signal name="activate" handler="ACTION_MOVE_SELECTION_LAYER_DOWN" swapped="no"/>
                           </object>
                         </child>
                         <child>
@@ -968,8 +1013,8 @@
                             <property name="use-underline">True</property>
                             <property name="use-stock">True</property>
                             <signal name="activate" handler="ACTION_ZOOM_IN" swapped="no"/>
-                            <accelerator key="KP_Add" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                             <accelerator key="plus" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                            <accelerator key="KP_Add" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -981,8 +1026,8 @@
                             <property name="use-underline">True</property>
                             <property name="use-stock">True</property>
                             <signal name="activate" handler="ACTION_ZOOM_OUT" swapped="no"/>
-                            <accelerator key="KP_Subtract" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                             <accelerator key="minus" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                            <accelerator key="KP_Subtract" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -1190,6 +1235,16 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkMenuItem" id="menuJournalDuplicatePage">
+                            <property name="name">menuJournalDuplicatePage</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Duplicate Page</property>
+                            <property name="use-underline">True</property>
+                            <signal name="activate" handler="ACTION_DUPLICATE_PAGE" swapped="no"/>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkMenuItem" id="menuJournalAddNewPdfPages">
                             <property name="name">menuJournalNewPageAtEnd</property>
                             <property name="visible">True</property>
@@ -1246,6 +1301,17 @@
                             <property name="use-underline">True</property>
                             <signal name="activate" handler="ACTION_DELETE_LAYER" swapped="no"/>
                             <accelerator key="l" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="menuJournalMergeLayerDown">
+                            <property name="name">menuJournalMergeLayerDown</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Merge Layer Down</property>
+                            <property name="use-underline">True</property>
+                            <signal name="activate" handler="ACTION_MERGE_LAYER_DOWN" swapped="no"/>
+                            <accelerator key="m" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -1331,6 +1397,30 @@
                             <property name="draw-as-radio">True</property>
                             <signal name="toggled" handler="ACTION_TOOL_ERASER" swapped="no"/>
                             <accelerator key="e" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkCheckMenuItem" id="menuToolsSelectPDFTextLinear">
+                            <property name="name">menuToolsSelectPDFTextHeadTail</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Select Linear Text</property>
+                            <property name="use-underline">True</property>
+                            <property name="draw-as-radio">True</property>
+                            <signal name="toggled" handler="ACTION_TOOL_SELECT_PDF_TEXT_LINEAR" swapped="no"/>
+                            <accelerator key="w" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkCheckMenuItem" id="menuToolsSelectPDFTextRect">
+                            <property name="name">menuToolsSelectPDFTextArea</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Select Text In Rectangle</property>
+                            <property name="use-underline">True</property>
+                            <property name="draw-as-radio">True</property>
+                            <signal name="toggled" handler="ACTION_TOOL_SELECT_PDF_TEXT_RECT" swapped="no"/>
+                            <accelerator key="y" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -1431,6 +1521,17 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkCheckMenuItem" id="menuToolsDrawDoubleArrow">
+                            <property name="name">menuToolsDrawDoubleArrow</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Draw Double Arrow</property>
+                            <property name="use-underline">True</property>
+                            <signal name="toggled" handler="ACTION_TOOL_DRAW_DOUBLE_ARROW" swapped="no"/>
+                            <accelerator key="5" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkCheckMenuItem" id="menuToolsDrawCoordinateSystem">
                             <property name="name">menuToolsDrawCoordinateSystem</property>
                             <property name="visible">True</property>
@@ -1438,7 +1539,7 @@
                             <property name="label" translatable="yes">Draw Coordinate System</property>
                             <property name="use-underline">True</property>
                             <signal name="toggled" handler="ACTION_TOOL_DRAW_COORDINATE_SYSTEM" swapped="no"/>
-                            <accelerator key="5" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                            <accelerator key="6" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -1449,7 +1550,7 @@
                             <property name="label" translatable="yes">Draw _Line</property>
                             <property name="use-underline">True</property>
                             <signal name="toggled" handler="ACTION_RULER" swapped="no"/>
-                            <accelerator key="6" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                            <accelerator key="7" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -1460,7 +1561,7 @@
                             <property name="label" translatable="yes">Draw Spline</property>
                             <property name="use-underline">True</property>
                             <signal name="toggled" handler="ACTION_TOOL_DRAW_SPLINE" swapped="no"/>
-                            <accelerator key="7" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                            <accelerator key="8" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                           </object>
                         </child>
                         <child>
@@ -1539,6 +1640,16 @@
                             <property name="draw-as-radio">True</property>
                             <signal name="toggled" handler="ACTION_TOOL_HAND" swapped="no"/>
                             <accelerator key="a" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkCheckMenuItem" id="menuSetsquare">
+                            <property name="use-action-appearance">False</property>
+                            <property name="name">menuSetsquare</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Setsquare</property>
+                            <signal name="toggled" handler="ACTION_SETSQUARE" swapped="no" />
                           </object>
                         </child>
                         <child>
@@ -2606,6 +2717,173 @@
             <property name="index">-1</property>
           </packing>
         </child>
+      </object>
+    </child>
+  </object>
+  <object class="GtkRevealer" id="pdfFloatingToolbox">
+    <property name="name">pdfFloatingTool</property>
+    <property name="visible">True</property>
+    <property name="can-focus">False</property>
+    <property name="transition-type">none</property>
+    <property name="reveal-child">True</property>
+    <child>
+      <!-- n-columns=3 n-rows=3 -->
+      <object class="GtkGrid">
+        <property name="name">pdfFloatingToolGrid</property>
+        <property name="visible">True</property>
+        <property name="can-focus">True</property>
+        <property name="vexpand">True</property>
+        <property name="orientation">vertical</property>
+        <property name="row-spacing">2</property>
+        <property name="column-spacing">1</property>
+        <child>
+          <object class="GtkButton" id="pdfTbCopyText">
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="receives-default">True</property>
+            <property name="tooltip-text" translatable="yes">Copy selected text</property>
+            <property name="always-show-image">True</property>
+            <child>
+              <object class="GtkImage">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="icon-name">edit-copy</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="left-attach">0</property>
+            <property name="top-attach">0</property>
+            <property name="width">2</property>
+            <property name="height">2</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkButton" id="pdfTbHighlight">
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="receives-default">True</property>
+            <property name="tooltip-text" translatable="yes">Highlight selected text</property>
+            <property name="always-show-image">True</property>
+            <child>
+              <object class="GtkImage">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="icon-name">xopp-tool-highlighter</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="left-attach">2</property>
+            <property name="top-attach">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkButton" id="pdfTbUnderline">
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="receives-default">True</property>
+            <property name="tooltip-text" translatable="yes">Underline selected text</property>
+            <property name="always-show-image">True</property>
+            <child>
+              <object class="GtkImage">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="icon-name">format-text-underline</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="left-attach">2</property>
+            <property name="top-attach">1</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkButton" id="pdfTbStrikethrough">
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="receives-default">True</property>
+            <property name="tooltip-text" translatable="yes">Strikethrough selected text</property>
+            <property name="always-show-image">True</property>
+            <child>
+              <object class="GtkImage">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="icon-name">format-text-strikethrough</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="left-attach">2</property>
+            <property name="top-attach">2</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkButton" id="pdfTbChangeType">
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="receives-default">True</property>
+            <property name="tooltip-text" translatable="yes">Toggle standard / region text selection</property>
+            <property name="always-show-image">True</property>
+            <child>
+              <object class="GtkImage">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="icon-name">format-justify-center</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="left-attach">0</property>
+            <property name="top-attach">2</property>
+            <property name="width">2</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+  <object class="GtkMenu" id="sidebarPreviewLayersContextMenu">
+    <property name="name">sidebarPreviewLayersContextMenu</property>
+    <property name="visible">True</property>
+    <property name="can-focus">False</property>
+    <child>
+      <object class="GtkMenuItem" id="sidebarPreviewLayerMoveUp">
+        <property name="name">sidebarPreviewLayerMoveUp</property>
+        <property name="visible">True</property>
+        <property name="can-focus">False</property>
+        <property name="label" translatable="yes">Move Up</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="sidebarPreviewLayerMoveDown">
+        <property name="name">sidebarPreviewLayerMoveDown</property>
+        <property name="visible">True</property>
+        <property name="can-focus">False</property>
+        <property name="label" translatable="yes">Move Down</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="sidebarPreviewMergeDown">
+        <property name="name">sidebarPreviewMergeDown</property>
+        <property name="visible">True</property>
+        <property name="can-focus">False</property>
+        <property name="label" translatable="yes">Merge Down</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="sidebarPreviewLayerDuplicate">
+        <property name="name">sidebarPreviewLayerDuplicate</property>
+        <property name="visible">True</property>
+        <property name="can-focus">False</property>
+        <property name="label" translatable="yes">Duplicate</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="sidebarPreviewLayerDelete">
+        <property name="name">sidebarPreviewLayerDelete</property>
+        <property name="visible">True</property>
+        <property name="can-focus">False</property>
+        <property name="label" translatable="yes">Delete</property>
       </object>
     </child>
   </object>

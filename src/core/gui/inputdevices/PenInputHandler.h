@@ -11,14 +11,15 @@
 
 #pragma once
 
-#include "AbstractInputHandler.h"
+#include "gui/inputdevices/InputEvents.h"  // for InputEvent
+
+#include "AbstractInputHandler.h"  // for AbstractInputHandler
 
 class InputContext;
+class PositionInputData;
+class XojPageView;
 
 class PenInputHandler: public AbstractInputHandler {
-private:
-    XojPageView* lastActivePage = nullptr;
-
 protected:
     /**
      * Whether the current device class has a device with button 1 in pressed state

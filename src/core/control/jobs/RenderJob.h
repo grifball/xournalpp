@@ -11,31 +11,30 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cairo.h>    // for cairo_surface_t
+#include <gtk/gtk.h>  // for GtkWidget
 
-#include <gtk/gtk.h>
-
-#include "util/Rectangle.h"
-
-#include "Job.h"
-
+#include "Job.h"  // for Job, JobType
 
 class XojPageView;
+namespace xoj::util {
+template <class T>
+class Rectangle;
+}  // namespace xoj::util
 
 class RenderJob: public Job {
 public:
     RenderJob(XojPageView* view);
 
 protected:
-    virtual ~RenderJob() = default;
+    ~RenderJob() override = default;
 
 public:
-    virtual JobType getType();
+    JobType getType() override;
 
-    void* getSource();
+    void* getSource() override;
 
-    void run();
+    void run() override;
 
 private:
     /**
@@ -43,7 +42,9 @@ private:
      */
     static void repaintWidget(GtkWidget* widget);
 
-    void rerenderRectangle(Rectangle<double> const& rect);
+    void rerenderRectangle(xoj::util::Rectangle<double> const& rect);
+
+    void renderToBuffer(cairo_surface_t* buffer) const;
 
 private:
     XojPageView* view;

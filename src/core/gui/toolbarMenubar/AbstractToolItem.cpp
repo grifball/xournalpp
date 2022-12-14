@@ -1,6 +1,13 @@
 #include "AbstractToolItem.h"
 
-#include <utility>
+#include <utility>  // for move
+
+#include <glib-object.h>  // for g_object_ref, g_object_...
+#include <glib.h>         // for g_error, g_warning, gchar
+
+#include "gui/toolbarMenubar/AbstractItem.h"  // for AbstractItem
+
+class ActionHandler;
 
 AbstractToolItem::AbstractToolItem(std::string id, ActionHandler* handler, ActionType type, GtkWidget* menuitem):
         AbstractItem(std::move(id), handler, type, menuitem) {}
@@ -11,6 +18,10 @@ AbstractToolItem::~AbstractToolItem() {
         g_object_unref(G_OBJECT(this->popupMenu));
         this->popupMenu = nullptr;
     }
+}
+
+auto AbstractToolItem::getItem() const -> GtkToolItem* {
+    return this->item;
 }
 
 void AbstractToolItem::selected(ActionGroup group, ActionType action) {
@@ -47,7 +58,7 @@ void AbstractToolItem::toolButtonCallback(GtkToolButton* toolbutton, AbstractToo
         item->toolToggleButtonActive = selected;
     }
 
-    item->activated(nullptr, nullptr, toolbutton);
+    item->activated(nullptr, toolbutton);
 }
 
 auto AbstractToolItem::createItem(bool horizontal) -> GtkToolItem* {

@@ -11,12 +11,15 @@
 
 #pragma once
 
-#include <cstring>
-#include <optional>
+#include <cstring>   // for strlen, size_t
+#include <optional>  // for optional
+#include <string>    // for string, allocator, basic_string
 
-#include <gio/gio.h>
+#include <gio/gio.h>    // for GFile
+#include <glib.h>       // for g_free, GError, g_error_free, g_filename_fro...
+#include <sys/types.h>  // for ssize_t
 
-#include "filesystem.h"
+#include "filesystem.h"  // for path, u8path
 
 namespace Util {
 /**
@@ -116,6 +119,9 @@ void openFileWithFilebrowser(const fs::path& filename);
  * passing a path to another program.
  */
 fs::path getLongPath(const fs::path& path);
+
+[[deprecated("can produce invalid strings on windows, use fs::path::native()")]] [[nodiscard]]  //
+auto system_single_byte_filename(const fs::path& path) -> std::string;
 
 /**
  * Return the configuration folder path (may not be guaranteed to exist).

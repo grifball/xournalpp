@@ -11,9 +11,13 @@
 
 #pragma once
 
-#include <poppler.h>
+#include <string>  // for string
+#include <vector>  // for vector
 
-#include "pdf/base/XojPdfPage.h"
+#include <cairo.h>    // for cairo_t, cairo_region_t
+#include <poppler.h>  // for PopplerPage
+
+#include "pdf/base/XojPdfPage.h"  // for XojPdfRectangle (ptr only), XojPdfP...
 
 
 class PopplerGlibPage: public XojPdfPage {
@@ -24,14 +28,22 @@ public:
     PopplerGlibPage& operator=(const PopplerGlibPage& other);
 
 public:
-    virtual double getWidth();
-    virtual double getHeight();
+    double getWidth() const override;
+    double getHeight() const override;
 
-    virtual void render(cairo_t* cr, bool forPrinting = false);  // NOLINT(google-default-arguments)
+    void render(cairo_t* cr) const override;
+    void renderForPrinting(cairo_t* cr) const override;
 
-    virtual std::vector<XojPdfRectangle> findText(std::string& text);
+    std::vector<XojPdfRectangle> findText(const std::string& text) override;
 
-    virtual int getPageId();
+    std::string selectText(const XojPdfRectangle& rect, XojPdfPageSelectionStyle style) override;
+
+    cairo_region_t* selectTextRegion(const XojPdfRectangle& rect, XojPdfPageSelectionStyle style) override;
+
+    TextSelection selectTextLines(const XojPdfRectangle& rect, XojPdfPageSelectionStyle style) override;
+
+
+    int getPageId() const override;
 
 private:
     PopplerPage* page;

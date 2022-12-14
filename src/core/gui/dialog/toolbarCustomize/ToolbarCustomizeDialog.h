@@ -11,29 +11,28 @@
 
 #pragma once
 
-#include <list>
-#include <string>
-#include <vector>
+#include <list>  // for list
 
-#include "gui/GladeGui.h"
-#include "gui/toolbarMenubar/model/ColorPalette.h"
+#include <gdk/gdk.h>  // for GdkDragContext
+#include <glib.h>     // for guint, gint
+#include <gtk/gtk.h>  // for GtkWidget, GtkSelectionData, GtkToolbar
 
-class AbstractToolItem;
+#include "gui/GladeGui.h"  // for GladeGui
+
 class MainWindow;
 class ToolbarDragDropHandler;
+class GladeSearchpath;
 
 typedef struct _ToolItemDragData ToolItemDragData;
-struct _ToolItemDragData;
 typedef struct _ColorToolItemDragData ColorToolItemDragData;
-struct _ColorToolItemDragData;
 
 class ToolbarCustomizeDialog: public GladeGui {
 public:
     ToolbarCustomizeDialog(GladeSearchpath* gladeSearchPath, MainWindow* win, ToolbarDragDropHandler* handler);
-    virtual ~ToolbarCustomizeDialog();
+    ~ToolbarCustomizeDialog() override;
 
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
     void rebuildIconview();
     void rebuildColorIcons();

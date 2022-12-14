@@ -11,21 +11,23 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <string>   // for string
 
-#include "gui/IconNameHelper.h"
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gtk/gtk.h>                // for GtkWidget, GtkToolItem, GTK_ORIEN...
 
-#include "AbstractToolItem.h"
+#include "enums/ActionType.enum.h"  // for ActionType
+#include "gui/IconNameHelper.h"     // for IconNameHelper
 
+#include "AbstractToolItem.h"  // for AbstractToolItem
 
-class GladeGui;
 class SpinPageAdapter;
+class ActionHandler;
 
 class ToolPageSpinner: public AbstractToolItem {
 public:
-    ToolPageSpinner(GladeGui* gui, ActionHandler* handler, std::string id, ActionType type,
-                    IconNameHelper iconNameHelper);
+    ToolPageSpinner(ActionHandler* handler, std::string id, ActionType type, IconNameHelper iconNameHelper);
     ~ToolPageSpinner() override;
 
 public:
@@ -44,8 +46,6 @@ private:
     void updateLabels();
 
 private:
-    GladeGui* gui = nullptr;
-
     SpinPageAdapter* pageSpinner = nullptr;
     GtkOrientation orientation = GTK_ORIENTATION_HORIZONTAL;
 

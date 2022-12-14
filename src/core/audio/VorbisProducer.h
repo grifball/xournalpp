@@ -11,19 +11,19 @@
 
 #pragma once
 
-#include <atomic>
-#include <thread>
-#include <utility>
+#include <atomic>  // for atomic
+#include <thread>  // for thread
 
-#include <sndfile.h>
+#include "filesystem.h"  // for path
 
-#include "AudioQueue.h"
-#include "DeviceInfo.h"
+template <typename T>
+class AudioQueue;
 
-struct VorbisProducer final {
+class VorbisProducer final {
+public:
     explicit VorbisProducer(AudioQueue<float>& audioQueue): audioQueue(audioQueue) {}
 
-    bool start(const std::string& filename, unsigned int timestamp);
+    bool start(fs::path const& file, unsigned int timestamp);
     void abort();
     void stop();
     void seek(int seconds);

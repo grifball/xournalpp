@@ -1,19 +1,20 @@
 #include "MainWindowToolbarMenu.h"
 
-#include "gui/toolbarMenubar/ToolMenuHandler.h"
-#include "gui/toolbarMenubar/model/ToolbarData.h"
-#include "gui/toolbarMenubar/model/ToolbarModel.h"
+#include <string>  // for operator==, string
 
-#include "MainWindow.h"
+#include <glib-object.h>  // for G_CALLBACK, g_sig...
+
+#include "control/settings/Settings.h"              // for Settings
+#include "gui/toolbarMenubar/ToolMenuHandler.h"     // for ToolMenuHandler
+#include "gui/toolbarMenubar/model/ToolbarData.h"   // for ToolbarData
+#include "gui/toolbarMenubar/model/ToolbarModel.h"  // for ToolbarModel
+
+#include "MainWindow.h"  // for MainWindow
 
 class MenuSelectToolbarData {
 public:
-    MenuSelectToolbarData(MainWindowToolbarMenu* tbm, GtkWidget* item, ToolbarData* d, int index) {
-        this->tbm = tbm;
-        this->item = item;
-        this->d = d;
-        this->index = index;
-    }
+    MenuSelectToolbarData(MainWindowToolbarMenu* tbm, GtkWidget* item, ToolbarData* d, int index):
+            tbm(tbm), item(item), d(d), index(index) {}
 
     MainWindowToolbarMenu* tbm;
     GtkWidget* item;

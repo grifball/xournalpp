@@ -1,19 +1,30 @@
 #include "Plugin.h"
+
+#include <algorithm>  // for max
+#include <array>      // for array
+#include <map>        // for map
+
+#include <gdk/gdk.h>      // for GdkModifierType
+#include <glib-object.h>  // for G_CALLBACK, g_signal_connect
+#include <glib.h>         // for g_key_file_free, g_warning, g_free
+
+#include "util/PathUtil.h"   // for toGFilename
+#include "util/XojMsgBox.h"  // for XojMsgBox
 #ifdef ENABLE_PLUGINS
 
-#include <utility>
+#include <utility>  // for move, pair
 
-#include "util/i18n.h"
+#include "util/i18n.h"  // for _
 
-#include "config.h"
+#include "config.h"  // for PROJECT_VERSION
 
 extern "C" {
-#include <lauxlib.h>
-#include <lua.h>
-#include <lualib.h>
+#include <lauxlib.h>  // for luaL_Reg, luaL_newstate, luaL_requiref
+#include <lua.h>      // for lua_getglobal, lua_getfield, lua_setf...
+#include <lualib.h>   // for luaL_openlibs
 }
 
-#include "luapi_application.h"
+#include "luapi_application.h"  // for luaopen_app
 
 /*
  ** these libs are loaded by lua.c and are readily available to any Lua
@@ -89,26 +100,10 @@ void Plugin::registerMenu(GtkWindow* mainWindow, GtkWidget* menu) {
     gtk_window_add_accel_group(GTK_WINDOW(mainWindow), accelGroup);
 }
 
-void Plugin::executeMenuEntry(MenuEntry* entry) { callFunction(entry->callback); }
+void Plugin::executeMenuEntry(MenuEntry* entry) { callFunction(entry->callback, entry->mode); }
 
-auto Plugin::getName() const -> std::string const& { return name; }
-
-auto Plugin::getDescription() const -> std::string const& { return description; }
-
-auto Plugin::getAuthor() const -> std::string const& { return author; }
-
-auto Plugin::getVersion() const -> std::string const& { return version; }
-
-auto Plugin::isEnabled() const -> bool { return enabled; }
-
-void Plugin::setEnabled(bool lEnabled) { this->enabled = lEnabled; }
-
-auto Plugin::isDefaultEnabled() const -> bool { return defaultEnabled; }
-
-auto Plugin::isInInitUi() const -> bool { return inInitUi; }
-
-auto Plugin::registerMenu(std::string menu, std::string callback, std::string accelerator) -> size_t {
-    menuEntries.emplace_back(this, std::move(menu), std::move(callback), std::move(accelerator));
+auto Plugin::registerMenu(std::string menu, std::string callback, long mode, std::string accelerator) -> size_t {
+    menuEntries.emplace_back(this, std::move(menu), std::move(callback), mode, std::move(accelerator));
     return menuEntries.size() - 1;
 }
 
@@ -240,11 +235,18 @@ void Plugin::loadScript() {
     }
 }
 
-auto Plugin::callFunction(const std::string& fnc) -> bool {
+auto Plugin::callFunction(const std::string& fnc, long mode) -> bool {
     lua_getglobal(lua.get(), fnc.c_str());
 
+    int numArgs = 0;
+
+    if (mode != LONG_MAX) {
+        lua_pushinteger(lua.get(), mode);
+        numArgs = 1;
+    }
+
     // Run the function
-    if (lua_pcall(lua.get(), 0, 0, 0)) {
+    if (lua_pcall(lua.get(), numArgs, 0, 0)) {
         const char* errMsg = lua_tostring(lua.get(), -1);
         std::map<int, std::string> button;
         button.insert(std::pair<int, std::string>(0, _("OK")));
@@ -257,6 +259,17 @@ auto Plugin::callFunction(const std::string& fnc) -> bool {
     return true;
 }
 
+auto Plugin::getName() const -> std::string const& { return name; }
+auto Plugin::getDescription() const -> std::string const& { return description; }
+auto Plugin::getAuthor() const -> std::string const& { return author; }
+auto Plugin::getVersion() const -> std::string const& { return version; }
+auto Plugin::getPath() const -> fs::path const& { return path; }
+
+auto Plugin::isEnabled() const -> bool { return enabled; }
+void Plugin::setEnabled(bool lEnabled) { this->enabled = lEnabled; }
+auto Plugin::isDefaultEnabled() const -> bool { return defaultEnabled; }
+
+auto Plugin::isInInitUi() const -> bool { return inInitUi; }
 auto Plugin::isValid() const -> bool { return valid; }
 
 #endif

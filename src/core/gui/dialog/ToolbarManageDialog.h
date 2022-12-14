@@ -11,18 +11,22 @@
 
 #pragma once
 
-#include "gui/GladeGui.h"
+#include <glib.h>     // for gchar
+#include <gtk/gtk.h>  // for GtkButton, GtkCellRendererText, GtkListStore
+
+#include "gui/GladeGui.h"  // for GladeGui
 
 class ToolbarData;
 class ToolbarModel;
+class GladeSearchpath;
 
 class ToolbarManageDialog: public GladeGui {
 public:
     ToolbarManageDialog(GladeSearchpath* gladeSearchPath, ToolbarModel* model);
-    virtual ~ToolbarManageDialog();
+    ~ToolbarManageDialog() override;
 
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
 private:
     static void treeSelectionChangedCallback(GtkTreeSelection* selection, ToolbarManageDialog* dlg);

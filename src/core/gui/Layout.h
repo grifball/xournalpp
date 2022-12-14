@@ -11,16 +11,16 @@
 
 #pragma once
 
-#include <mutex>
-#include <string>
-#include <vector>
+#include <cstddef>   // for size_t
+#include <mutex>     // for mutex
+#include <optional>  // for optional
+#include <vector>    // for vector
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkAdjustment
 
-#include "util/Rectangle.h"
+#include "util/Rectangle.h"  // for Rectangle
 
-#include "LayoutMapper.h"
-
+#include "LayoutMapper.h"  // for LayoutMapper
 
 class XojPageView;
 class XournalView;
@@ -84,7 +84,7 @@ public:
     /**
      * Returns the Rectangle which is currently visible
      */
-    Rectangle<double> getVisibleRect();
+    xoj::util::Rectangle<double> getVisibleRect();
 
 
     /**

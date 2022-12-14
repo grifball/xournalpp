@@ -61,7 +61,7 @@ static guint signals[LAST_SIGNAL] = {0};
 
 static void gtk_xoj_int_txt_select_all(GtkWidget* widget) {
     GtkXojIntTxt* txt = GTK_XOJ_INT_TXT(widget);
-    txt->te->selectAtCursor(TextEditor::SelectType::all);
+    txt->te->selectAtCursor(TextEditor::SelectType::ALL);
 }
 
 static void gtk_xoj_int_txt_move_cursor(GtkWidget* widget, gint step, gint bitmask) {
@@ -86,7 +86,7 @@ static void gtk_xoj_int_txt_cut_clipboard(GtkWidget* widget) {
 
 static void gtk_xoj_int_txt_copy_clipboard(GtkWidget* widget) {
     GtkXojIntTxt* txt = GTK_XOJ_INT_TXT(widget);
-    txt->te->copyToCliboard();
+    txt->te->copyToClipboard();
 }
 
 static void gtk_xoj_int_txt_paste_clipboard(GtkWidget* widget) {

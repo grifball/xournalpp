@@ -11,10 +11,25 @@
 
 #pragma once
 
-#include "view/DocumentView.h"
+#include <memory>    // for unique_ptr
+#include <optional>  // for optional
 
-#include "InputHandler.h"
-#include "SnapToGridInputHandler.h"
+#include <cairo.h>    // for cairo_t, cairo_surface_t
+#include <gdk/gdk.h>  // for GdkEventKey
+#include <glib.h>     // for guint32
+
+#include "model/PageRef.h"  // for PageRef
+#include "model/Point.h"    // for Point
+#include "view/StrokeView.h"
+
+#include "InputHandler.h"            // for InputHandler
+#include "SnapToGridInputHandler.h"  // for SnapToGridInputHandler
+
+class Layer;
+class PositionInputData;
+class Stroke;
+class XojPageView;
+class XournalView;
 
 namespace StrokeStabilizer {
 class Base;
@@ -32,17 +47,17 @@ class Active;
  */
 class StrokeHandler: public InputHandler {
 public:
-    StrokeHandler(XournalView* xournal, XojPageView* redrawable, const PageRef& page);
-    virtual ~StrokeHandler();
+    StrokeHandler(Control* control, XojPageView* pageView, const PageRef& page);
+    ~StrokeHandler() override = default;
 
-    void draw(cairo_t* cr);
+    void draw(cairo_t* cr) override;
 
-    void onMotionCancelEvent();
-    bool onMotionNotifyEvent(const PositionInputData& pos);
-    void onButtonReleaseEvent(const PositionInputData& pos);
-    void onButtonPressEvent(const PositionInputData& pos);
-    void onButtonDoublePressEvent(const PositionInputData& pos);
-    bool onKeyEvent(GdkEventKey* event);
+    void onSequenceCancelEvent() override;
+    bool onMotionNotifyEvent(const PositionInputData& pos, double zoom) override;
+    void onButtonReleaseEvent(const PositionInputData& pos, double zoom) override;
+    void onButtonPressEvent(const PositionInputData& pos, double zoom) override;
+    void onButtonDoublePressEvent(const PositionInputData& pos, double zoom) override;
+    bool onKeyEvent(GdkEventKey* event) override;
 
     /**
      * @brief Add a straight line to the stroke (if the movement is valid).
@@ -54,7 +69,7 @@ public:
     /**
      * @brief paints a single dot
      */
-    void paintDot(const double x, const double y, const double width) const;
+    void paintDot(cairo_t* cr, const double x, const double y, const double width) const;
 
 protected:
     /**
@@ -65,7 +80,6 @@ protected:
     void drawSegmentTo(const Point& point);
 
     void strokeRecognizerDetected(Stroke* recognized, Layer* layer);
-    void destroySurface();
 
 protected:
     Point buttonDownPoint;  // used for tapSelect and filtering - never snapped to grid.
@@ -73,17 +87,44 @@ protected:
 
 private:
     /**
-     * The masking surface
+     * @brief Create and initialize the mask
+     * The mask is used for strokes that do not require a full redraw at each input event.
+     * For those strokes, whenever a new input event is received, the new segment is simply added to the mask.
+     * The mask is then blitted upon a call to `draw`.
+     *
+     * A stroke requires a full redraw if
+     *      * it has a filling (the filling can not be computed simply from just the last segment)
+     *      * or it has dashes (to get the dash offset right)
+     *
+     * Nb: the dashed exception could be avoided if we recorded the dash offset (= the stroke's length so far)
      */
-    cairo_surface_t* surfMask = nullptr;
+    void createMask();
 
-    /**
-     * And the corresponding cairo_t*
-     */
-    cairo_t* crMask = nullptr;
+    // Helper class to safely handle cairo surface and context
+    class Mask {
+    public:
+        Mask() = delete;
+        Mask(const Mask&) = delete;
+        Mask(Mask&&) = delete;
+        Mask& operator=(const Mask&) = delete;
+        Mask& operator=(Mask&&) = delete;
 
-    DocumentView view;
+        Mask(int width, int height);
+        ~Mask() noexcept;
 
+        /**
+         * The masking surface
+         */
+        cairo_surface_t* surf = nullptr;
+
+        /**
+         * And the corresponding cairo_t*
+         */
+        cairo_t* cr = nullptr;
+    };
+    std::optional<Mask> mask;
+
+    std::optional<xoj::view::StrokeView> strokeView;
 
     // to filter out short strokes (usually the user tapping on the page to select it)
     guint32 startStrokeTime{};
@@ -97,9 +138,9 @@ private:
     bool hasPressure;
     bool firstPointPressureChange = false;
 
-    bool fullRedraw;
-
     friend class StrokeStabilizer::Active;
 
     static constexpr double MAX_WIDTH_VARIATION = 0.3;
+
+    XojPageView* pageView;
 };

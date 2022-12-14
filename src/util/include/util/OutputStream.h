@@ -11,12 +11,11 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include <zlib.h>
+#include <zlib.h>  // for gzFile
 
-#include "filesystem.h"
+#include "filesystem.h"  // for path
 
 class OutputStream {
 public:
@@ -34,12 +33,12 @@ public:
 class GzOutputStream: public OutputStream {
 public:
     GzOutputStream(fs::path file);
-    virtual ~GzOutputStream();
+    ~GzOutputStream() override;
 
 public:
-    virtual void write(const char* data, int len);
+    void write(const char* data, int len) override;
 
-    virtual void close();
+    void close() override;
 
     std::string& getLastError();
 

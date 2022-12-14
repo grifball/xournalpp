@@ -1,19 +1,90 @@
 #include "RecentManager.h"
 
-#include <array>
+#include <algorithm>    // for sort, max
+#include <array>        // for array
+#include <ctime>        // for time_t
+#include <functional>   // for reference_wrapper, greater, less
+#include <optional>     // for optional
+#include <string>       // for string, allocator, operator+
+#include <type_traits>  // for make_signed
+#include <vector>       // for vector
 
-#include <filesystem.h>
+#include <gio/gio.h>      // for g_file_get_parse_name, g_file_ne...
+#include <glib-object.h>  // for g_object_get_data, g_object_set_...
 
-#include "util/PathUtil.h"
-#include "util/StringUtils.h"
-#include "util/i18n.h"
-#include "util/safe_casts.h"
+#include "util/GListView.h"          // for GListView, GListView<>::GListVie...
+#include "util/PathUtil.h"           // for fromUri, toUri, hasPdfFileExt
+#include "util/PlaceholderString.h"  // for PlaceholderString
+#include "util/SmallVector.h"        // for SmallVector
+#include "util/StringUtils.h"        // for replace_pair, StringUtils
+#include "util/i18n.h"               // for FS, FORMAT_STR, C_F
+#include "util/safe_casts.h"         // for as_signed
 
-#define MIME "application/x-xoj"
-#define MIME_PDF "application/x-pdf"
-#define GROUP "xournal++"
 
-using std::string;
+constexpr auto const* MIME = "application/x-xoj";
+constexpr auto const* MIME_PDF = "application/x-pdf";
+constexpr auto const* GROUP = "xournal++";
+constexpr int maxRecent = 10;
+
+template <template <class> class Comp>
+inline auto compareGtkRecentInfo(GtkRecentInfo const& a, GtkRecentInfo const& b) -> bool {
+    auto deconstify = [](auto&& ref) { return const_cast<GtkRecentInfo*>(&ref); };  // NOLINT
+    auto a_time = gtk_recent_info_get_modified(deconstify(a));                      // actually const
+    auto b_time = gtk_recent_info_get_modified(deconstify(b));
+    return Comp<time_t>{}(a_time, b_time);
+}
+
+inline auto operator<(GtkRecentInfo const& a, GtkRecentInfo const& b) -> bool {
+    return compareGtkRecentInfo<std::less>(a, b);
+}
+
+inline auto operator>(GtkRecentInfo const& a, GtkRecentInfo const& b) -> bool {
+    return compareGtkRecentInfo<std::greater>(a, b);
+}
+
+namespace {
+
+auto filterRecent(GtkRecentInfo& info, bool xoj) -> bool {
+    const gchar* uri = gtk_recent_info_get_uri(&info);
+    if (!uri) {  // issue #1071
+        return false;
+    }
+    auto p = Util::fromUri(uri);
+    if (!p) {  // Skip remote files
+        return false;
+    }
+    return (xoj && Util::hasXournalFileExt(*p)) || (!xoj && p->extension() == ".pdf");
+}
+
+void recentManagerChangedCallback(GtkRecentManager* /*manager*/, RecentManager* recentManager) {
+    recentManager->updateMenu();
+}
+
+void recentsMenuActivateCallback(GtkMenuItem* self, RecentManager* recentManager) {
+    auto* info = static_cast<GtkRecentInfo*>(g_object_get_data(G_OBJECT(self), "gtk-recent-info"));
+    g_return_if_fail(info != nullptr);
+
+    auto p = Util::fromUri(gtk_recent_info_get_uri(info));
+    if (p) {
+        recentManager->openRecent(*p);
+    }
+}
+
+void recentsClearActivateCallback(GtkMenuItem* self, GtkRecentManager* recentManager) {
+    GList* items = gtk_recent_manager_get_items(recentManager);
+    auto item_view = GListView<GtkRecentInfo>(items);
+    for (auto& recent: item_view) {
+        if (filterRecent(recent, false) ||
+            filterRecent(recent, true)) {
+            gtk_recent_manager_remove_item(recentManager,
+                                           gtk_recent_info_get_uri(&recent),
+                                           nullptr);
+        }
+    }
+    g_list_free_full(items, GDestroyNotify(gtk_recent_info_unref));
+}
+
+}  // namespace
 
 RecentManagerListener::~RecentManagerListener() = default;
 
@@ -36,11 +107,6 @@ RecentManager::~RecentManager() {
 }
 
 void RecentManager::addListener(RecentManagerListener* l) { this->listener.push_back(l); }
-
-void RecentManager::recentManagerChangedCallback(GtkRecentManager* /*manager*/, RecentManager* recentManager) {
-    // regenerate the menu when the model changes
-    recentManager->updateMenu();
-}
 
 void RecentManager::addRecentFileFilename(const fs::path& filepath) {
     GtkRecentManager* recentManager = gtk_recent_manager_get_default();
@@ -94,93 +160,55 @@ void RecentManager::freeOldMenus() {
 
 using stime_t = std::make_signed<time_t>;
 
-// Todo: replace with <=> in c++ 20
-auto RecentManager::sortRecentsEntries(GtkRecentInfo* a, GtkRecentInfo* b) -> gint {
-    auto tp_a = gtk_recent_info_get_modified(a);
-    auto tp_b = gtk_recent_info_get_modified(b);
-    return tp_a != tp_b ? (tp_a < tp_b ? 1 : -1) : 0;
-}
-
 auto RecentManager::getMostRecent() -> GtkRecentInfo* {
-    GList* filteredItemsXoj = filterRecent(gtk_recent_manager_get_items(gtk_recent_manager_get_default()), true);
-    auto mostRecent = static_cast<GtkRecentInfo*>(filteredItemsXoj->data);
-
-    gtk_recent_info_ref(mostRecent);
-    for (GList* l = filteredItemsXoj; l != nullptr; l = l->next) {
-        gtk_recent_info_unref(static_cast<GtkRecentInfo*>(l->data));
+    auto recent_items = gtk_recent_manager_get_items(gtk_recent_manager_get_default());
+    // Todo (cpp20): replace with std::ranges::max_element
+    if (!recent_items) {
+        return nullptr;
     }
-    g_list_free(filteredItemsXoj);
+    GtkRecentInfo* mostRecent = static_cast<GtkRecentInfo*>(recent_items->data);
+    for (auto& recent: GListView<GtkRecentInfo>(recent_items->next)) {
+        auto time = gtk_recent_info_get_modified(&recent);
+        if (as_signed(time) < 0) {
+            continue;
+        }
+        if (!filterRecent(recent, true)) {
+            continue;
+        }
+        if (*mostRecent < recent) {
+            mostRecent = &recent;
+        }
+    }
+    gtk_recent_info_ref(mostRecent);
 
+    for (auto& recent_info: GListView<GtkRecentInfo>(recent_items)) { gtk_recent_info_unref(&recent_info); }
+    g_list_free(recent_items);
     return mostRecent;
 }
 
-auto RecentManager::filterRecent(GList* items, bool xoj) -> GList* {
-    GList* filteredItems = nullptr;
-
-    // filter
-    for (GList* l = items; l != nullptr; l = l->next) {
-        auto* info = static_cast<GtkRecentInfo*>(l->data);
-
-        const gchar* uri = gtk_recent_info_get_uri(info);
-        if (!uri)  // issue #1071
-        {
-            continue;
-        }
-
-        auto p = Util::fromUri(uri);
-
-        // Skip remote files
-        if (!p) {
-            continue;
-        }
-
-        if (xoj && Util::hasXournalFileExt(*p)) {
-            filteredItems = g_list_prepend(filteredItems, info);
-        }
-        if (!xoj && Util::hasPdfFileExt(*p)) {
-            filteredItems = g_list_prepend(filteredItems, info);
-        }
-    }
-
-    // sort
-    filteredItems = g_list_sort(filteredItems, reinterpret_cast<GCompareFunc>(sortRecentsEntries));
-
-    return filteredItems;
-}
-
-void RecentManager::recentsMenuActivateCallback(GtkAction* action, RecentManager* recentManager) {
-    auto* info = static_cast<GtkRecentInfo*>(g_object_get_data(G_OBJECT(action), "gtk-recent-info"));
-    g_return_if_fail(info != nullptr);
-
-    auto p = Util::fromUri(gtk_recent_info_get_uri(info));
-    if (p) {
-        recentManager->openRecent(*p);
-    }
-}
-
 void RecentManager::addRecentMenu(GtkRecentInfo* info, int i) {
-    string display_name = gtk_recent_info_get_display_name(info);
+    std::string display_name = gtk_recent_info_get_display_name(info);
 
     // escape underscore
     StringUtils::replaceAllChars(display_name, {replace_pair('_', "__")});
 
-    string label =
+    std::string label =
             (i >= 10 ? FS(FORMAT_STR("{1}. {2}") % i % display_name) : FS(FORMAT_STR("_{1}. {2}") % i % display_name));
 
     /* gtk_recent_info_get_uri_display (info) is buggy and
      * works only for local files */
     GFile* gfile = g_file_new_for_uri(gtk_recent_info_get_uri(info));
     char* fileUri = g_file_get_parse_name(gfile);
-    string ruri = fileUri;
+    std::string ruri = fileUri;
     g_free(fileUri);
 
     g_object_unref(gfile);
 
     if (StringUtils::startsWith(ruri, "~/")) {
-        ruri = string(g_get_home_dir()) + ruri.substr(1);
+        ruri = std::string(g_get_home_dir()) + ruri.substr(1);
     }
 
-    string tip = FS(C_F("{1} is a URI", "Open {1}") % ruri);
+    std::string tip = FS(C_F("{1} is a URI", "Open {1}") % ruri);
 
 
     GtkWidget* item = gtk_menu_item_new_with_mnemonic(label.c_str());
@@ -199,45 +227,72 @@ void RecentManager::addRecentMenu(GtkRecentInfo* info, int i) {
 }
 
 void RecentManager::updateMenu() {
-    GtkRecentManager* recentManager = gtk_recent_manager_get_default();
-    GList* items = gtk_recent_manager_get_items(recentManager);
-    GList* filteredItemsXoj = filterRecent(items, true);
-    GList* filteredItemsPdf = filterRecent(items, false);
-
     freeOldMenus();
 
-    int xojCount = 0;
-    for (GList* l = filteredItemsXoj; l != nullptr; l = l->next) {
-        auto* info = static_cast<GtkRecentInfo*>(l->data);
+    GtkRecentManager* recentManager = gtk_recent_manager_get_default();
+    GList* items = gtk_recent_manager_get_items(recentManager);
+    auto item_view = GListView<GtkRecentInfo>(items);
 
-        if (xojCount >= maxRecent) {
-            break;
+    SmallVector<std::reference_wrapper<GtkRecentInfo>, maxRecent> xoj_files;
+    SmallVector<std::reference_wrapper<GtkRecentInfo>, maxRecent> pdf_files;
+
+    for (auto& recent: item_view) {
+        if (filterRecent(recent, false) && pdf_files.size() < maxRecent) {
+            pdf_files.emplace_back(recent);
         }
-        xojCount++;
-
-        addRecentMenu(info, xojCount);
-    }
-    g_list_free(filteredItemsXoj);
-
-    GtkWidget* separator = gtk_separator_menu_item_new();
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), separator);
-    gtk_widget_set_visible(GTK_WIDGET(separator), true);
-
-    this->menuItemList.push_back(separator);
-
-    int pdfCount = 0;
-    for (GList* l = filteredItemsPdf; l != nullptr; l = l->next) {
-        auto* info = static_cast<GtkRecentInfo*>(l->data);
-
-        if (pdfCount >= maxRecent) {
-            break;
+        if (filterRecent(recent, true) && xoj_files.size() < maxRecent) {
+            xoj_files.emplace_back(recent);
         }
-        pdfCount++;
-
-        addRecentMenu(info, pdfCount + xojCount);
     }
-    g_list_free(filteredItemsPdf);
 
-    g_list_foreach(items, reinterpret_cast<GFunc>(gtk_recent_info_unref), nullptr);
-    g_list_free(items);
+    if (pdf_files.empty() && xoj_files.empty()) {
+        GtkWidget* noFilesItem = gtk_menu_item_new_with_mnemonic(
+            _("No recent files"));
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), noFilesItem);
+        gtk_widget_set_visible(GTK_WIDGET(noFilesItem), true);
+        gtk_widget_set_sensitive(GTK_WIDGET(noFilesItem), false);
+        this->menuItemList.push_back(noFilesItem);
+        g_list_free_full(items, GDestroyNotify(gtk_recent_info_unref));
+        return;
+    }
+
+    std::sort(xoj_files.begin(), xoj_files.end(), std::greater<GtkRecentInfo>());
+    std::sort(pdf_files.begin(), pdf_files.end(), std::greater<GtkRecentInfo>());
+
+    auto insert_items_job = [this](auto&& container, auto const base) mutable {
+        auto const& begi = container.begin();
+        auto const& endi = container.end();
+        auto item_count = base;
+        for (auto iter = begi; iter != endi; ++iter, ++item_count) {
+            addRecentMenu(&iter->get(), item_count);
+        }
+        return item_count;
+    };
+
+    auto base = insert_items_job(xoj_files, 0);
+
+    if (!xoj_files.empty()) {
+        GtkWidget* separatorTop = gtk_separator_menu_item_new();
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), separatorTop);
+        gtk_widget_set_visible(GTK_WIDGET(separatorTop), true);
+        this->menuItemList.push_back(separatorTop);
+    }
+    insert_items_job(pdf_files, base);
+
+    if (!pdf_files.empty()) {
+        GtkWidget* separatorBottom = gtk_separator_menu_item_new();
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), separatorBottom);
+        gtk_widget_set_visible(GTK_WIDGET(separatorBottom), true);
+        this->menuItemList.push_back(separatorBottom);
+    }
+
+    GtkWidget* clearItem = gtk_menu_item_new_with_mnemonic(
+        _("Clear list"));
+    g_signal_connect(clearItem, "activate",
+                    G_CALLBACK(recentsClearActivateCallback), recentManager);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), clearItem);
+    gtk_widget_set_visible(GTK_WIDGET(clearItem), true);
+    this->menuItemList.push_back(clearItem);
+
+    g_list_free_full(items, GDestroyNotify(gtk_recent_info_unref));
 }

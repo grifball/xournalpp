@@ -11,50 +11,52 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <string>   // for string
 
-#include <gtk/gtk.h>
+#include <glib.h>     // for gboolean, gchar, gint
+#include <gtk/gtk.h>  // for GtkWidget, GtkTreeIter
 
-#include "gui/IconNameHelper.h"
-#include "gui/sidebar/AbstractSidebarPage.h"
-
+#include "gui/IconNameHelper.h"               // for IconNameHelper
+#include "gui/sidebar/AbstractSidebarPage.h"  // for AbstractSidebarPage
+#include "model/DocumentChangeType.h"         // for DocumentChangeType
 
 class Control;
+class SidebarToolbar;
 
 class SidebarIndexPage: public AbstractSidebarPage {
 public:
     SidebarIndexPage(Control* control, SidebarToolbar* toolbar);
-    virtual ~SidebarIndexPage();
+    ~SidebarIndexPage() override;
 
 public:
-    virtual void enableSidebar();
-    virtual void disableSidebar();
+    void enableSidebar() override;
+    void disableSidebar() override;
 
     /**
      * @overwrite
      */
-    virtual std::string getName();
+    std::string getName() override;
 
     /**
      * @overwrite
      */
-    virtual std::string getIconName();
+    std::string getIconName() override;
 
     /**
      * @overwrite
      */
-    virtual bool hasData();
+    bool hasData() override;
 
     /**
      * @overwrite
      */
-    virtual GtkWidget* getWidget();
+    GtkWidget* getWidget() override;
 
     /**
      * @overwrite
      */
-    virtual void selectPageNr(size_t page, size_t pdfPage);
+    void selectPageNr(size_t page, size_t pdfPage) override;
 
     /**
      * Select page in the tree
@@ -64,7 +66,7 @@ public:
     /**
      * @overwrite
      */
-    virtual void documentChanged(DocumentChangeType type);
+    void documentChanged(DocumentChangeType type) override;
 
 private:
     /**

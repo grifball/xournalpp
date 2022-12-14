@@ -1,18 +1,23 @@
 #include "ToolbarAdapter.h"
 
-#include <utility>
+#include <utility>  // for move
 
-#include "control/Control.h"
-#include "gui/ToolitemDragDrop.h"
-#include "gui/toolbarMenubar/AbstractToolItem.h"
-#include "gui/toolbarMenubar/ColorToolItem.h"
-#include "gui/toolbarMenubar/icon/ColorSelectImage.h"
-#include "gui/toolbarMenubar/model/ToolbarData.h"
-#include "util/Util.h"
-#include "util/i18n.h"
+#include <glib-object.h>  // for G_CALLBACK
 
-#include "ToolItemDragCurrentData.h"
-#include "ToolbarDragDropHelper.h"
+#include "control/Control.h"                           // for Control
+#include "gui/MainWindow.h"                            // for MainWindow
+#include "gui/ToolitemDragDrop.h"                      // for ToolItemDragDr...
+#include "gui/toolbarMenubar/AbstractToolItem.h"       // for AbstractToolItem
+#include "gui/toolbarMenubar/ColorToolItem.h"          // for ColorToolItem
+#include "gui/toolbarMenubar/ToolMenuHandler.h"        // for ToolMenuHandler
+#include "gui/toolbarMenubar/icon/ColorSelectImage.h"  // for ColorSelectImage
+#include "gui/toolbarMenubar/model/ToolbarData.h"      // for ToolbarData
+#include "util/NamedColor.h"                           // for NamedColor
+#include "util/PlaceholderString.h"                    // for PlaceholderString
+#include "util/i18n.h"                                 // for FS, _F
+
+#include "ToolItemDragCurrentData.h"  // for ToolItemDragCu...
+#include "ToolbarDragDropHelper.h"    // for dragDestAddToo...
 
 using std::string;
 
@@ -99,8 +104,8 @@ void ToolbarAdapter::prepareToolItem(GtkToolItem* it) {
      */
     {
         gtk_widget_realize(GTK_WIDGET(it));
-        GdkScreen* screen = gtk_widget_get_screen(GTK_WIDGET(it));
-        GdkCursor* cursor = gdk_cursor_new_for_display(gdk_screen_get_display(screen), GDK_HAND2);
+        GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(it));
+        GdkCursor* cursor = gdk_cursor_new_for_display(display, GDK_HAND2);
         g_assert_nonnull(cursor);
         GdkWindow* window = gtk_widget_get_window(GTK_WIDGET(it));
         g_assert_nonnull(window);

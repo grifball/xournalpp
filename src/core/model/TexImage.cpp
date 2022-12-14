@@ -1,10 +1,16 @@
 #include "TexImage.h"
 
-#include <utility>
+#include <utility>  // for move
 
-#include "util/pixbuf-utils.h"
-#include "util/serializing/ObjectInputStream.h"
-#include "util/serializing/ObjectOutputStream.h"
+#include <poppler-document.h>  // for poppler_document_ge...
+#include <poppler-page.h>      // for poppler_page_get_size
+
+#include "model/Element.h"                        // for Element, ELEMENT_TE...
+#include "util/Rectangle.h"                       // for Rectangle
+#include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
+
+using xoj::util::Rectangle;
 
 TexImage::TexImage(): Element(ELEMENT_TEXIMAGE) { this->sizeCalculated = true; }
 
@@ -22,7 +28,7 @@ void TexImage::freeImageAndPdf() {
     }
 }
 
-auto TexImage::clone() -> Element* {
+auto TexImage::clone() const -> Element* {
     auto* img = new TexImage();
     img->x = this->x;
     img->y = this->y;
@@ -33,11 +39,14 @@ auto TexImage::clone() -> Element* {
     img->snappedBounds = this->snappedBounds;
     img->sizeCalculated = this->sizeCalculated;
 
+    // Clone has a copy of our PDF.
     img->pdf = this->pdf;
     g_object_ref(this->pdf);
 
+    // Load a copy of our data (must be called after
+    // giving the clone a copy of our PDF -- it may change
+    // the PDF we've given it).
     img->loadData(std::string(this->binaryData), nullptr);
-
 
     return img;
 }

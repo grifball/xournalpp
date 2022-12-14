@@ -11,10 +11,6 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
-
-
 class XojPageView;
 class XournalView;
 
@@ -27,17 +23,17 @@ public:
     /**
      * Repaint a page
      */
-    void repaintPage(XojPageView* view);
+    void repaintPage(const XojPageView* view);
 
     /**
      * Repaint a page area, coordinates are in view coordinates
      */
-    void repaintPageArea(XojPageView* view, int x1, int y1, int x2, int y2);
+    void repaintPageArea(const XojPageView* view, int x1, int y1, int x2, int y2);
 
     /**
      * Repaints the page border (at least)
      */
-    void repaintPageBorder(XojPageView* view);
+    void repaintPageBorder(const XojPageView* view);
 
 private:
     XournalView* xournal;

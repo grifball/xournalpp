@@ -1,19 +1,25 @@
 #include "ClipboardHandler.h"
 
-#include <set>
-#include <utility>
+#include <set>      // for multiset, operator!=
+#include <utility>  // for move
+#include <vector>   // for vector
 
-#include <cairo-svg.h>
-#include <config.h>
+#include <cairo-svg.h>    // for cairo_svg_surface_c...
+#include <cairo.h>        // for cairo_create, cairo...
+#include <glib-object.h>  // for g_object_unref, g_s...
 
-#include "util/Util.h"
-#include "util/pixbuf-utils.h"
-#include "util/serializing/BinObjectEncoding.h"
-#include "util/serializing/ObjectInputStream.h"
-#include "util/serializing/ObjectOutputStream.h"
-#include "view/DocumentView.h"
+#include "control/tools/EditSelection.h"          // for EditSelection
+#include "model/Element.h"                        // for Element, ELEMENT_TEXT
+#include "model/Text.h"                           // for Text
+#include "util/Util.h"                            // for DPI_NORMALIZATION_F...
+#include "util/pixbuf-utils.h"                    // for xoj_pixbuf_get_from...
+#include "util/serializing/BinObjectEncoding.h"   // for BinObjectEncoding
+#include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
+#include "view/ElementContainerView.h"            // for ElementContainerView
+#include "view/View.h"                            // for Context
 
-#include "Control.h"
+#include "config.h"  // for PROJECT_STRING
 
 using std::string;
 
@@ -36,6 +42,12 @@ ClipboardHandler::~ClipboardHandler() { g_signal_handler_disconnect(this->clipbo
 static GdkAtom atomXournal = gdk_atom_intern_static_string("application/xournal");
 
 auto ClipboardHandler::paste() -> bool {
+    /* Request targets again, since the owner-change signal is not emitted on MacOS and under X11 with no XFIXES
+     * extension. See https://docs.gtk.org/gdk3/struct.EventOwnerChange.html and
+     * https://gitlab.gnome.org/GNOME/gtk/-/issues/1757 */
+    gtk_clipboard_request_contents(clipboard, gdk_atom_intern_static_string("TARGETS"),
+                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), this);
+
     if (this->containsXournal) {
         gtk_clipboard_request_contents(this->clipboard, atomXournal,
                                        reinterpret_cast<GtkClipboardReceivedFunc>(pasteClipboardContents), this);
@@ -142,7 +154,7 @@ auto ClipboardHandler::copy() -> bool {
 
     std::multiset<Text*, decltype(&ElementCompareFunc)> textElements(ElementCompareFunc);
 
-    for (Element* e: *this->selection->getElements()) {
+    for (Element* e: this->selection->getElements()) {
         if (e->getType() == ELEMENT_TEXT) {
             textElements.insert(dynamic_cast<Text*>(e));
         }
@@ -160,8 +172,6 @@ auto ClipboardHandler::copy() -> bool {
     // prepare image contents: PNG
     /////////////////////////////////////////////////////////////////
 
-    DocumentView view;
-
     double dpiFactor = 1.0 / Util::DPI_NORMALIZATION_FACTOR * 300.0;
 
     int width = static_cast<int>(selection->getWidth() * dpiFactor);
@@ -170,8 +180,10 @@ auto ClipboardHandler::copy() -> bool {
     cairo_t* crPng = cairo_create(surfacePng);
     cairo_scale(crPng, dpiFactor, dpiFactor);
 
-    cairo_translate(crPng, -selection->getXOnView(), -selection->getYOnView());
-    view.drawSelection(crPng, this->selection);
+    cairo_translate(crPng, -selection->getOriginalXOnView(), -selection->getOriginalYOnView());
+
+    xoj::view::ElementContainerView view(this->selection);
+    view.draw(xoj::view::Context::createDefault(crPng));
 
     cairo_destroy(crPng);
 
@@ -190,7 +202,8 @@ auto ClipboardHandler::copy() -> bool {
                                                 selection->getWidth(), selection->getHeight());
     cairo_t* crSVG = cairo_create(surfaceSVG);
 
-    view.drawSelection(crSVG, this->selection);
+    cairo_translate(crSVG, -selection->getOriginalXOnView(), -selection->getOriginalYOnView());
+    view.draw(xoj::view::Context::createDefault(crSVG));
 
     cairo_surface_destroy(surfaceSVG);
     cairo_destroy(crSVG);
@@ -236,7 +249,7 @@ void ClipboardHandler::setSelection(EditSelection* selection) {
     this->listener->clipboardCutCopyEnabled(selection != nullptr);
 }
 
-void ClipboardHandler::setCopyPasteEnabled(bool enabled) {
+void ClipboardHandler::setCopyCutEnabled(bool enabled) {
     if (enabled) {
         listener->clipboardCutCopyEnabled(true);
     } else if (!selection) {
@@ -245,7 +258,7 @@ void ClipboardHandler::setCopyPasteEnabled(bool enabled) {
 }
 
 void ClipboardHandler::ownerChangedCallback(GtkClipboard* clip, GdkEvent* event, ClipboardHandler* handler) {
-    if (event->type == GDK_OWNER_CHANGE) {
+    if (gdk_event_get_event_type(event) == GDK_OWNER_CHANGE) {
         handler->clipboardUpdated(event->owner_change.selection);
     }
 }
@@ -256,7 +269,11 @@ void ClipboardHandler::clipboardUpdated(GdkAtom atom) {
 }
 
 void ClipboardHandler::pasteClipboardImage(GtkClipboard* clipboard, GdkPixbuf* pixbuf, ClipboardHandler* handler) {
-    handler->listener->clipboardPasteImage(pixbuf);
+    if (pixbuf) {
+        handler->listener->clipboardPasteImage(pixbuf);
+    } else {
+        g_warning("Trying to paste image, but pixbuf is null");
+    }
 }
 
 void ClipboardHandler::pasteClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,

@@ -8,12 +8,16 @@
  *
  * @license GNU GPLv2 or later
  */
+#pragma once
 
 #include <fstream>  // std::ofstream
 
 #include <execinfo.h>
 
 #include "util/PathUtil.h"
+#include "util/Stacktrace.h"
+
+#include "config-dev.h"
 
 static bool alreadyCrashed = false;
 

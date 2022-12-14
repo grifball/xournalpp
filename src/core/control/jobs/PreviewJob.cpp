@@ -1,13 +1,27 @@
 #include "PreviewJob.h"
 
-#include "control/Control.h"
-#include "gui/Shadow.h"
-#include "gui/sidebar/previews/base/SidebarPreviewBase.h"
-#include "gui/sidebar/previews/base/SidebarPreviewBaseEntry.h"
-#include "gui/sidebar/previews/layer/SidebarPreviewLayerEntry.h"
-#include "model/Document.h"
-#include "view/DocumentView.h"
-#include "view/PdfView.h"
+#include <memory>  // for __s...
+#include <mutex>   // for mutex
+#include <vector>  // for vector
+
+#include <glib-object.h>  // for g_o...
+#include <gtk/gtk.h>      // for Gtk...
+
+#include "control/Control.h"                                      // for Con...
+#include "control/jobs/Job.h"                                     // for JOB...
+#include "gui/Shadow.h"                                           // for Shadow
+#include "gui/sidebar/previews/base/SidebarPreviewBase.h"         // for Sid...
+#include "gui/sidebar/previews/base/SidebarPreviewBaseEntry.h"    // for Sid...
+#include "gui/sidebar/previews/layer/SidebarPreviewLayerEntry.h"  // for Sid...
+#include "model/Document.h"                                       // for Doc...
+#include "model/Layer.h"                                          // for Layer
+#include "model/PageRef.h"                                        // for Pag...
+#include "model/XojPage.h"                                        // for Xoj...
+#include "util/Util.h"                                            // for exe...
+#include "view/DocumentView.h"                                    // for Doc...
+#include "view/LayerView.h"                                       // for Lay...
+#include "view/View.h"                                            // for Con...
+#include "view/background/BackgroundView.h"                       // for BAC...
 
 PreviewJob::PreviewJob(SidebarPreviewBaseEntry* sidebar): sidebarPreview(sidebar) {}
 
@@ -53,20 +67,13 @@ void PreviewJob::finishPaint() {
     this->sidebarPreview->drawingMutex.unlock();
 }
 
-void PreviewJob::drawBackgroundPdf(Document* doc) {
-    int pgNo = this->sidebarPreview->page->getPdfPageNr();
-    XojPdfPageSPtr popplerPage = doc->getPdfPage(pgNo);
-
-    PdfView::drawPage(this->sidebarPreview->sidebar->getCache(), popplerPage, cr2, zoom,
-                      this->sidebarPreview->page->getWidth(), this->sidebarPreview->page->getHeight());
-}
-
 void PreviewJob::drawPage() {
-    DocumentView view;
     PageRef page = this->sidebarPreview->page;
     Document* doc = this->sidebarPreview->sidebar->getControl()->getDocument();
+    DocumentView view;
+    view.setPdfCache(this->sidebarPreview->sidebar->getCache());
     PreviewRenderType type = this->sidebarPreview->getRenderType();
-    int layer;
+    Layer::Index layer = 0;
 
     doc->lock();
 
@@ -75,26 +82,7 @@ void PreviewJob::drawPage() {
         layer = (dynamic_cast<SidebarPreviewLayerEntry*>(this->sidebarPreview))->getLayer();
     }
 
-    // Pdf::drawPage needs to go before DocumentView::initDrawing until DocumentView learns to do it and the first
-    // switch block can go away and the layer assignment into the remaining switch block.
-    switch (type) {
-        case RENDER_TYPE_PAGE_LAYER:
-            if (layer != -1) {
-                break;  // out
-            }
-            [[fallthrough]];
-
-        case RENDER_TYPE_PAGE_LAYERSTACK:
-        case RENDER_TYPE_PAGE_PREVIEW:
-            if (page->getBackgroundType().isPdfPage()) {
-                drawBackgroundPdf(doc);
-            }
-            break;
-
-        default:
-            // unknown type
-            break;
-    }
+    auto context = xoj::view::Context::createDefault(cr2);
 
     switch (type) {
         case RENDER_TYPE_PAGE_PREVIEW:
@@ -105,11 +93,12 @@ void PreviewJob::drawPage() {
         case RENDER_TYPE_PAGE_LAYER:
             // render single layer
             view.initDrawing(page, cr2, true);
-            if (layer == -1) {
-                view.drawBackground();
+            if (layer == 0) {
+                view.drawBackground(xoj::view::BACKGROUND_SHOW_ALL);
             } else {
-                Layer* drawLayer = (*page->getLayers())[layer];
-                view.drawLayer(cr2, drawLayer);
+                Layer* drawLayer = (*page->getLayers())[layer - 1];
+                xoj::view::LayerView layerView(drawLayer);
+                layerView.draw(context);
             }
             view.finializeDrawing();
             break;
@@ -117,10 +106,11 @@ void PreviewJob::drawPage() {
         case RENDER_TYPE_PAGE_LAYERSTACK:
             // render all layers up to layer
             view.initDrawing(page, cr2, true);
-            view.drawBackground();
-            for (int i = 0; i <= layer; i++) {
+            view.drawBackground(xoj::view::BACKGROUND_SHOW_ALL);
+            for (Layer::Index i = 0; i < layer; i++) {
                 Layer* drawLayer = (*page->getLayers())[i];
-                view.drawLayer(cr2, drawLayer);
+                xoj::view::LayerView layerView(drawLayer);
+                layerView.draw(context);
             }
             view.finializeDrawing();
             break;

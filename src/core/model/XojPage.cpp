@@ -1,13 +1,14 @@
 #include "XojPage.h"
 
-#include <algorithm>
-#include <iterator>
-#include <utility>
+#include <algorithm>  // for find, transform
+#include <iterator>   // for back_insert_iterator, back_inserter, begin
+#include <utility>    // for move
 
-#include "util/i18n.h"
+#include "model/Layer.h"     // for Layer, Layer::Index
+#include "model/PageType.h"  // for PageType, PageTypeFormat, PageTypeForma...
+#include "util/i18n.h"       // for _
 
-#include "BackgroundImage.h"
-#include "Document.h"
+#include "BackgroundImage.h"  // for BackgroundImage
 
 XojPage::XojPage(double width, double height): width(width), height(height), bgType(PageTypeFormat::Lined) {}
 
@@ -17,9 +18,9 @@ XojPage::~XojPage() {
 }
 
 XojPage::XojPage(XojPage const& page):
+        backgroundImage(page.backgroundImage),
         width(page.width),
         height(page.height),
-        backgroundImage(page.backgroundImage),
         currentLayer(page.currentLayer),
         bgType(page.bgType),
         pdfBackgroundPage(page.pdfBackgroundPage),
@@ -36,36 +37,33 @@ void XojPage::addLayer(Layer* layer) {
     this->currentLayer = npos;
 }
 
-void XojPage::insertLayer(Layer* layer, int index) {
-    if (index >= static_cast<int>(this->layer.size())) {
+void XojPage::insertLayer(Layer* layer, Layer::Index index) {
+    if (index >= this->layer.size()) {
         addLayer(layer);
         return;
     }
 
-    this->layer.insert(this->layer.begin() + index, layer);
+    this->layer.insert(std::next(this->layer.begin(), static_cast<ptrdiff_t>(index)), layer);
     this->currentLayer = index + 1;
 }
 
-void XojPage::removeLayer(Layer* layer) {
-    for (unsigned int i = 0; i < this->layer.size(); i++) {
-        if (layer == this->layer[i]) {
-            this->layer.erase(this->layer.begin() + i);
-            break;
-        }
+void XojPage::removeLayer(Layer* l) {
+    if (auto it = std::find(layer.begin(), layer.end(), l); it != layer.end()) {
+        this->layer.erase(it);
     }
     this->currentLayer = npos;
 }
 
-void XojPage::setSelectedLayerId(int id) { this->currentLayer = id; }
+void XojPage::setSelectedLayerId(Layer::Index id) { this->currentLayer = id; }
 
 auto XojPage::getLayers() -> std::vector<Layer*>* { return &this->layer; }
 
-auto XojPage::getLayerCount() -> size_t { return this->layer.size(); }
+auto XojPage::getLayerCount() const -> Layer::Index { return this->layer.size(); }
 
 /**
  * Layer ID 0 = Background, Layer ID 1 = Layer 1
  */
-auto XojPage::getSelectedLayerId() -> int {
+auto XojPage::getSelectedLayerId() -> Layer::Index {
     if (this->currentLayer == npos) {
         this->currentLayer = this->layer.size();
     }
@@ -73,42 +71,32 @@ auto XojPage::getSelectedLayerId() -> int {
     return this->currentLayer;
 }
 
-void XojPage::setLayerVisible(int layerId, bool visible) {
-    if (layerId < 0) {
-        return;
-    }
-
+void XojPage::setLayerVisible(Layer::Index layerId, bool visible) {
     if (layerId == 0) {
         backgroundVisible = visible;
         return;
     }
 
     layerId--;
-    if (layerId >= static_cast<int>(this->layer.size())) {
+    if (layerId >= this->layer.size()) {
         return;
     }
 
     this->layer[layerId]->setVisible(visible);
 }
 
-auto XojPage::isLayerVisible(int layerId) -> bool {
-    if (layerId < 0) {
-        return false;
-    }
-
+auto XojPage::isLayerVisible(Layer::Index layerId) const -> bool {
     if (layerId == 0) {
         return backgroundVisible;
     }
 
     layerId--;
-    if (layerId >= static_cast<int>(this->layer.size())) {
+    if (layerId >= this->layer.size()) {
         return false;
     }
 
     return this->layer[layerId]->isVisible();
 }
-
-auto XojPage::isLayerVisible(Layer* layer) -> bool { return layer->isVisible(); }
 
 void XojPage::setBackgroundPdfPageNr(size_t page) {
     this->pdfBackgroundPage = page;
@@ -131,7 +119,7 @@ auto XojPage::getHeight() const -> double { return this->height; }
 
 auto XojPage::getPdfPageNr() const -> size_t { return this->pdfBackgroundPage; }
 
-auto XojPage::isAnnotated() -> bool {
+auto XojPage::isAnnotated() const -> bool {
     for (Layer* l: this->layer) {
         if (l->isAnnotated()) {
             return true;

@@ -11,18 +11,26 @@
 
 #pragma once
 
-#include "UndoAction.h"
+#include <string>  // for string
+#include <vector>  // for vector
+
+#include "model/PageRef.h"  // for PageRef
+
+#include "UndoAction.h"  // for UndoAction
+
+class Control;
+class Element;
 
 class ScaleUndoAction: public UndoAction {
 public:
     ScaleUndoAction(const PageRef& page, std::vector<Element*>* elements, double x0, double y0, double fx, double fy,
                     double rotation, bool restoreLineWidth);
-    virtual ~ScaleUndoAction();
+    ~ScaleUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
-    virtual std::string getText();
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
+    std::string getText() override;
 
 private:
     void applyScale(double fx, double fy, bool restoreLineWidth);

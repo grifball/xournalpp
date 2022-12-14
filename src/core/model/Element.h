@@ -11,20 +11,22 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <iosfwd>  // for ptrdiff_t
 
-#include <gtk/gtk.h>
+#include <gdk/gdk.h>  // for GdkRectangle
 
-#include "util/Color.h"
-#include "util/Rectangle.h"
-#include "util/serializing/Serializable.h"
+#include "util/Color.h"                     // for Color
+#include "util/Rectangle.h"                 // for Rectangle
+#include "util/serializing/Serializable.h"  // for Serializable
+
+class ObjectInputStream;
+class ObjectOutputStream;
 
 enum ElementType { ELEMENT_STROKE = 1, ELEMENT_IMAGE, ELEMENT_TEXIMAGE, ELEMENT_TEXT };
 
 class ShapeContainer {
 public:
-    virtual bool contains(double x, double y) = 0;
+    virtual bool contains(double x, double y) const = 0;
 
     virtual ~ShapeContainer() = default;
 };
@@ -35,6 +37,9 @@ protected:
 
 public:
     ~Element() override;
+
+    using Index = std::ptrdiff_t;
+    static constexpr auto InvalidIndex = static_cast<Index>(-1);
 
 public:
     ElementType getType() const;
@@ -54,14 +59,14 @@ public:
     double getElementWidth() const;
     double getElementHeight() const;
 
-    Rectangle<double> getSnappedBounds() const;
+    xoj::util::Rectangle<double> getSnappedBounds() const;
 
-    Rectangle<double> boundingRect() const;
+    xoj::util::Rectangle<double> boundingRect() const;
 
-    virtual bool intersectsArea(const GdkRectangle* src);
-    virtual bool intersectsArea(double x, double y, double width, double height);
+    virtual bool intersectsArea(const GdkRectangle* src) const;
+    virtual bool intersectsArea(double x, double y, double width, double height) const;
 
-    virtual bool isInSelection(ShapeContainer* container);
+    virtual bool isInSelection(ShapeContainer* container) const;
 
     virtual bool rescaleOnlyAspectRatio();
     virtual bool rescaleWithMirror();
@@ -69,10 +74,10 @@ public:
     /**
      * Take 1:1 copy of this element
      */
-    virtual Element* clone() = 0;
+    virtual Element* clone() const = 0;
 
-    void serialize(ObjectOutputStream& out) const;
-    void readSerialized(ObjectInputStream& in);
+    void serialize(ObjectOutputStream& out) const override;
+    void readSerialized(ObjectInputStream& in) override;
 
 private:
 protected:
@@ -90,7 +95,7 @@ protected:
     mutable double y = 0;
 
     // The position and dimensions on the screen used for snapping
-    mutable Rectangle<double> snappedBounds{};
+    mutable xoj::util::Rectangle<double> snappedBounds{};
 
 private:
     /**

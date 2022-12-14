@@ -1,14 +1,20 @@
 #include "RenameLayerDialog.h"
 
-#include <memory>
+#include <memory>  // for allocator, make_unique
+#include <string>  // for string
 
-#include "control/layer/LayerController.h"
-#include "undo/LayerRenameUndoAction.h"
-#include "util/StringUtils.h"
+#include <glib-object.h>  // for G_CALLBACK, g_signal_connect
+
+#include "control/layer/LayerController.h"  // for LayerController
+#include "undo/LayerRenameUndoAction.h"     // for LayerRenameUndoAction
+#include "undo/UndoRedoHandler.h"           // for UndoRedoHandler
+
+class GladeSearchpath;
+class Layer;
 
 RenameLayerDialog::RenameLayerDialog(GladeSearchpath* gladeSearchPath, UndoRedoHandler* undo, LayerController* lc,
                                      Layer* l):
-        GladeGui(gladeSearchPath, "renameLayerDialog.glade", "renameLayerDialog"), undo(undo), lc(lc), l(l) {
+        GladeGui(gladeSearchPath, "renameLayerDialog.glade", "renameLayerDialog"), lc(lc), undo(undo), l(l) {
     gtk_entry_set_text(GTK_ENTRY(get("layerNameEntry")), lc->getCurrentLayerName().c_str());
 
     g_signal_connect(get("renameButton"), "clicked", G_CALLBACK(renameSuccessful), this);

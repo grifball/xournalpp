@@ -11,15 +11,12 @@
 
 #pragma once
 
-#include <list>
-#include <string>
-#include <vector>
+#include <list>  // for list
 
-#include <gtk/gtk.h>
+#include <gtk/gtk.h>  // for GtkToolButton
 
-#include "enums/ActionGroup.enum.h"
-#include "enums/ActionType.enum.h"
-
+#include "enums/ActionGroup.enum.h"  // for ActionGroup
+#include "enums/ActionType.enum.h"   // for ActionType
 
 class ActionHandler;
 
@@ -58,8 +55,7 @@ public:
     virtual ~ActionHandler();
 
 public:
-    virtual void actionPerformed(ActionType type, ActionGroup group, GdkEvent* event, GtkMenuItem* menuitem,
-                                 GtkToolButton* toolbutton, bool enabled) = 0;
+    virtual void actionPerformed(ActionType type, ActionGroup group, GtkToolButton* toolbutton, bool enabled) = 0;
 
     void fireEnableAction(ActionType action, bool enabled);
     void addListener(ActionEnabledListener* listener);

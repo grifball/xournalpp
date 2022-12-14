@@ -1,39 +1,48 @@
 #include "EditSelectionContents.h"
 
-#include <cmath>
-#include <memory>
+#include <algorithm>  // for min, max, transform
+#include <cmath>      // for abs, isnan
+#include <iterator>   // for back_insert_iterator
+#include <memory>     // for make_unique, __shar...
 
-#include "control/Control.h"
-#include "gui/PageView.h"
-#include "gui/XournalView.h"
-#include "model/Document.h"
-#include "model/Element.h"
-#include "model/Layer.h"
-#include "model/Stroke.h"
-#include "model/Text.h"
-#include "undo/ColorUndoAction.h"
-#include "undo/DeleteUndoAction.h"
-#include "undo/FillUndoAction.h"
-#include "undo/FontUndoAction.h"
-#include "undo/InsertUndoAction.h"
-#include "undo/LineStyleUndoAction.h"
-#include "undo/MoveUndoAction.h"
-#include "undo/RotateUndoAction.h"
-#include "undo/ScaleUndoAction.h"
-#include "undo/SizeUndoAction.h"
-#include "undo/UndoRedoHandler.h"
-#include "util/serializing/ObjectInputStream.h"
-#include "util/serializing/ObjectOutputStream.h"
-#include "view/DocumentView.h"
+#include <glib.h>  // for g_idle_add, g_sourc...
 
-#include "Selection.h"
+#include "control/Control.h"                      // for Control
+#include "control/settings/Settings.h"            // for Settings
+#include "control/tools/CursorSelectionType.h"    // for CURSOR_SELECTION_TO...
+#include "gui/PageView.h"                         // for XojPageView
+#include "gui/XournalView.h"                      // for XournalView
+#include "model/Element.h"                        // for Element, Element::I...
+#include "model/Layer.h"                          // for Layer
+#include "model/LineStyle.h"                      // for LineStyle
+#include "model/Stroke.h"                         // for Stroke, STROKE_TOOL...
+#include "model/Text.h"                           // for Text
+#include "model/XojPage.h"                        // for XojPage
+#include "undo/ColorUndoAction.h"                 // for ColorUndoAction
+#include "undo/DeleteUndoAction.h"                // for DeleteUndoAction
+#include "undo/FillUndoAction.h"                  // for FillUndoAction
+#include "undo/FontUndoAction.h"                  // for FontUndoAction
+#include "undo/InsertUndoAction.h"                // for InsertsUndoAction
+#include "undo/LineStyleUndoAction.h"             // for LineStyleUndoAction
+#include "undo/MoveUndoAction.h"                  // for MoveUndoAction
+#include "undo/RotateUndoAction.h"                // for RotateUndoAction
+#include "undo/ScaleUndoAction.h"                 // for ScaleUndoAction
+#include "undo/SizeUndoAction.h"                  // for SizeUndoAction
+#include "undo/UndoRedoHandler.h"                 // for UndoRedoHandler
+#include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
+#include "view/ElementContainerView.h"            // for ElementContainerView
+#include "view/View.h"                            // for Context
+
+class XojFont;
 
 using std::vector;
+using xoj::util::Rectangle;
 
 EditSelectionContents::EditSelectionContents(Rectangle<double> bounds, Rectangle<double> snappedBounds,
                                              const PageRef& sourcePage, Layer* sourceLayer, XojPageView* sourceView):
-        lastBounds(bounds),
         originalBounds(bounds),
+        lastBounds(bounds),
         lastSnappedBounds(snappedBounds),
         sourcePage(sourcePage),
         sourceLayer(sourceLayer),
@@ -55,7 +64,7 @@ EditSelectionContents::~EditSelectionContents() {
 /**
  * Add an element to the this selection
  */
-void EditSelectionContents::addElement(Element* e, Layer::ElementIndex order) {
+void EditSelectionContents::addElement(Element* e, Element::Index order) {
     g_assert(this->selected.size() == this->insertOrder.size());
     this->selected.emplace_back(e);
     auto item = std::make_pair(e, order);
@@ -63,7 +72,7 @@ void EditSelectionContents::addElement(Element* e, Layer::ElementIndex order) {
                              item);
 }
 
-void EditSelectionContents::replaceInsertOrder(std::deque<std::pair<Element*, Layer::ElementIndex>> newInsertOrder) {
+void EditSelectionContents::replaceInsertOrder(std::deque<std::pair<Element*, Element::Index>> newInsertOrder) {
     this->selected.clear();
     this->selected.reserve(newInsertOrder.size());
     std::transform(begin(newInsertOrder), end(newInsertOrder), std::back_inserter(this->selected),
@@ -74,13 +83,12 @@ void EditSelectionContents::replaceInsertOrder(std::deque<std::pair<Element*, La
 /**
  * Returns all containing elements of this selection
  */
-auto EditSelectionContents::getElements() -> vector<Element*>* { return &this->selected; }
-auto EditSelectionContents::getElements() const -> const vector<Element*>* { return &this->selected; }
+auto EditSelectionContents::getElements() const -> const vector<Element*>& { return this->selected; }
 
 /**
  * Returns the insert order of this selection
  */
-auto EditSelectionContents::getInsertOrder() const -> std::deque<std::pair<Element*, Layer::ElementIndex>> const& {
+auto EditSelectionContents::getInsertOrder() const -> std::deque<std::pair<Element*, Element::Index>> const& {
     return this->insertOrder;
 }
 
@@ -104,11 +112,11 @@ auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, c
             int pointCount = s->getPointCount();
             vector<double> originalPressure = SizeUndoAction::getPressure(s);
 
-            if (tool == STROKE_TOOL_PEN) {
+            if (tool == StrokeTool::PEN) {
                 s->setWidth(thicknessPen[size]);
-            } else if (tool == STROKE_TOOL_HIGHLIGHTER) {
+            } else if (tool == StrokeTool::HIGHLIGHTER) {
                 s->setWidth(thicknessHighlighter[size]);
-            } else if (tool == STROKE_TOOL_ERASER) {
+            } else if (tool == StrokeTool::ERASER) {
                 s->setWidth(thicknessEraser[size]);
             }
 
@@ -151,9 +159,9 @@ auto EditSelectionContents::setFill(int alphaPen, int alphaHighligther) -> UndoA
             StrokeTool tool = s->getToolType();
             int newFill = 128;
 
-            if (tool == STROKE_TOOL_PEN) {
+            if (tool == StrokeTool::PEN) {
                 newFill = alphaPen;
-            } else if (tool == STROKE_TOOL_HIGHLIGHTER) {
+            } else if (tool == StrokeTool::HIGHLIGHTER) {
                 newFill = alphaHighligther;
             } else {
                 continue;
@@ -308,7 +316,9 @@ void EditSelectionContents::fillUndoItem(DeleteUndoAction* undo) {
     // and owned by the selection, therefore the layer
     // doesn't know the index anymore
     int index = layer->getElements().size();
-    for (Element* e: this->selected) { undo->addElement(layer, e, index); }
+    for (Element* e: this->selected) {
+        undo->addElement(layer, e, index);
+    }
 
     this->selected.clear();
     this->insertOrder.clear();
@@ -371,7 +381,7 @@ void EditSelectionContents::finalizeSelection(Rectangle<double> bounds, Rectangl
             e->rotate(snappedBounds.x + this->lastSnappedBounds.width / 2,
                       snappedBounds.y + this->lastSnappedBounds.height / 2, this->rotation);
         }
-        if (index == Layer::InvalidElementIndex) {
+        if (index == Element::InvalidIndex) {
             // if the element didn't have a source layer (e.g, clipboard)
             layer->addElement(e);
         } else {
@@ -383,6 +393,10 @@ void EditSelectionContents::finalizeSelection(Rectangle<double> bounds, Rectangl
 auto EditSelectionContents::getOriginalX() const -> double { return this->originalBounds.x; }
 
 auto EditSelectionContents::getOriginalY() const -> double { return this->originalBounds.y; }
+
+auto EditSelectionContents::getOriginalBounds() const -> Rectangle<double> {
+    return Rectangle<double>{this->originalBounds};
+}
 
 auto EditSelectionContents::getSourceView() -> XojPageView* { return this->sourceView; }
 
@@ -497,8 +511,9 @@ void EditSelectionContents::paint(cairo_t* cr, double x, double y, double rotati
         cairo_scale(cr2, fx, fy);
         cairo_translate(cr2, -dx, -dy);
         cairo_scale(cr2, zoom, zoom);
-        DocumentView view;
-        view.drawSelection(cr2, this);
+
+        xoj::view::ElementContainerView view(this);
+        view.draw(xoj::view::Context::createDefault(cr2));
 
         cairo_destroy(cr2);
     }
@@ -528,25 +543,6 @@ void EditSelectionContents::paint(cairo_t* cr, double x, double y, double rotati
     cairo_paint(cr);
 
     cairo_restore(cr);
-}
-
-auto EditSelectionContents::copySelection(PageRef page, XojPageView* view, double x, double y) -> UndoAction* {
-    Layer* layer = page->getSelectedLayer();
-
-    vector<Element*> new_elems;
-
-    for (Element* e: *getElements()) {
-        Element* ec = e->clone();
-
-        ec->move(x - this->originalBounds.x, y - this->originalBounds.y);
-
-        layer->addElement(ec);
-        new_elems.push_back(ec);
-    }
-
-    view->rerenderPage();
-
-    return new InsertsUndoAction(page, layer, new_elems);
 }
 
 void EditSelectionContents::serialize(ObjectOutputStream& out) const {

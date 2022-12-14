@@ -1,11 +1,19 @@
 #include "PageTypeMenu.h"
 
-#include "control/settings/PageTemplateSettings.h"
-#include "control/settings/Settings.h"
-#include "util/i18n.h"
-#include "view/background/MainBackgroundPainter.h"
+#include <algorithm>  // for max
+#include <memory>     // for unique_ptr
+#include <string>     // for string
 
-#include "PageTypeHandler.h"
+#include <glib-object.h>       // for G_CALLBACK, g_sig...
+#include <util/gtk4_helper.h>  // for gtk_box_append
+
+#include "control/settings/PageTemplateSettings.h"  // for PageTemplateSettings
+#include "control/settings/Settings.h"              // for Settings
+#include "util/Color.h"                             // for Color
+#include "util/i18n.h"                              // for _
+#include "view/background/BackgroundView.h"         // for BackgroundView
+
+#include "PageTypeHandler.h"  // for PageTypeInfo, Pag...
 
 PageTypeMenuChangeListener::~PageTypeMenuChangeListener() = default;
 PageTypeApplyListener::~PageTypeApplyListener() = default;
@@ -19,12 +27,12 @@ PageTypeMenu::PageTypeMenu(PageTypeHandler* types, Settings* settings, bool show
         types(types),
         settings(settings),
         ignoreEvents(false),
+        pageTypeSource(ApplyPageTypeSource::SELECTED),
         listener(nullptr),
         menuX(0),
         menuY(0),
         showPreview(showPreview),
-        pageTypeApplyListener(nullptr),
-        pageTypeSource(ApplyPageTypeSource::SELECTED) {
+        pageTypeApplyListener(nullptr) {
     initDefaultMenu();
     loadDefaultPage();
 }
@@ -35,18 +43,18 @@ void PageTypeMenu::loadDefaultPage() {
     setSelected(model.getPageInsertType());
 }
 
-auto PageTypeMenu::createPreviewImage(MainBackgroundPainter* bgPainter, const PageType& pt) -> cairo_surface_t* {
-    int previewWidth = 100;
-    int previewHeight = 141;
-    double zoom = 0.5;
-
-    auto page = std::make_shared<XojPage>(previewWidth / zoom, previewHeight / zoom);
+auto PageTypeMenu::createPreviewImage(const PageType& pt) -> cairo_surface_t* {
+    const int previewWidth = 100;
+    const int previewHeight = 141;
+    const double zoom = 0.5;
 
     cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, previewWidth, previewHeight);
     cairo_t* cr = cairo_create(surface);
     cairo_scale(cr, zoom, zoom);
 
-    bgPainter->paint(pt, cr, std::move(page));
+    auto bgView = xoj::view::BackgroundView::createRuled(previewWidth / zoom, previewHeight / zoom, Colors::white,
+                                                         pt, 2.0);
+    bgView->draw(cr);
 
     cairo_identity_matrix(cr);
 
@@ -63,20 +71,19 @@ auto PageTypeMenu::createPreviewImage(MainBackgroundPainter* bgPainter, const Pa
     return surface;
 }
 
-void PageTypeMenu::addMenuEntry(MainBackgroundPainter* bgPainter, PageTypeInfo* t) {
+void PageTypeMenu::addMenuEntry(PageTypeInfo* t) {
     bool special = t->page.isSpecial();
     bool showImg = !special && showPreview;
 
     GtkWidget* entry = nullptr;
     if (showImg) {
-        cairo_surface_t* img = createPreviewImage(bgPainter, t->page);
+        cairo_surface_t* img = createPreviewImage(t->page);
         GtkWidget* preview = gtk_image_new_from_surface(img);
         entry = gtk_check_menu_item_new();
 
         GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-
-        gtk_container_add(GTK_CONTAINER(box), preview);
-        gtk_container_add(GTK_CONTAINER(box), gtk_label_new(t->name.c_str()));
+        gtk_box_append(GTK_BOX(box), preview);
+        gtk_box_append(GTK_BOX(box), gtk_label_new(t->name.c_str()));
 
         gtk_container_add(GTK_CONTAINER(entry), box);
         gtk_widget_show_all(entry);
@@ -205,9 +212,6 @@ auto PageTypeMenu::createApplyMenuItem(const char* text) -> GtkWidget* {
 }
 
 void PageTypeMenu::initDefaultMenu() {
-    auto bgPainter = std::make_unique<MainBackgroundPainter>();
-    bgPainter->setLineWidthFactor(2);
-
     bool special = false;
     for (PageTypeInfo* t: this->types->getPageTypes()) {
         if (!showSpecial && t->page.isSpecial()) {
@@ -231,7 +235,7 @@ void PageTypeMenu::initDefaultMenu() {
                 gtk_container_add(GTK_CONTAINER(menu), separator);
             }
         }
-        addMenuEntry(bgPainter.get(), t);
+        addMenuEntry(t);
     }
 }
 

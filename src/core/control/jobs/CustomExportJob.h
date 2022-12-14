@@ -11,14 +11,16 @@
 
 #pragma once
 
-#include <map>
+#include <map>     // for map
+#include <string>  // for string
 
-#include "util/PageRange.h"
-#include "util/i18n.h"
-#include "view/DocumentView.h"
+#include "util/ElementRange.h"  // for PageRangeVector
 
-#include "BaseExportJob.h"
-#include "ImageExport.h"
+#include "BaseExportJob.h"  // for BaseExportJob, EXPORT_BACKGROUND_ALL
+#include "ImageExport.h"    // for RasterImageQualityParameter, EXPORT_GRAP...
+#include "filesystem.h"     // for path
+
+class Control;
 
 
 class CustomExportJob: public BaseExportJob {
@@ -26,18 +28,18 @@ public:
     CustomExportJob(Control* control);
 
 protected:
-    virtual ~CustomExportJob();
+    ~CustomExportJob() override;
 
 public:
-    void run();
+    void run() override;
 
 public:
-    virtual bool showFilechooser();
+    bool showFilechooser() override;
 
 protected:
-    virtual void afterRun();
+    void afterRun() override;
 
-    virtual void addFilterToDialog();
+    void addFilterToDialog() override;
 
     /**
      * Create one Graphics file per page

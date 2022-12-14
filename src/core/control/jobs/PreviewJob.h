@@ -11,16 +11,11 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cairo.h>  // for cairo_surface_t, cairo_t
 
-#include <gtk/gtk.h>
-
-#include "Job.h"
-
+#include "Job.h"  // for Job, JobType
 
 class SidebarPreviewBaseEntry;
-class Document;
 
 /**
  * @brief A Job which renders a SidebarPreviewPage
@@ -30,22 +25,21 @@ public:
     PreviewJob(SidebarPreviewBaseEntry* sidebar);
 
 protected:
-    virtual void onDelete() override;
-    virtual ~PreviewJob();
+    void onDelete() override;
+    ~PreviewJob() override;
 
 public:
-    virtual void* getSource();
+    void* getSource() override;
 
-    virtual void run();
+    void run() override;
 
-    virtual JobType getType();
+    JobType getType() override;
 
 private:
     void initGraphics();
     void clipToPage();
     void drawBorder();
     void finishPaint();
-    void drawBackgroundPdf(Document* doc);
     void drawPage();
 
 private:

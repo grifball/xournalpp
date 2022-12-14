@@ -11,15 +11,19 @@
 
 #pragma once
 
-#include "gui/GladeGui.h"
+#include <gtk/gtk.h>  // for GtkWindow
+
+#include "gui/GladeGui.h"  // for GladeGui
+
+class GladeSearchpath;
 
 class FillOpacityDialog: public GladeGui {
 public:
     FillOpacityDialog(GladeSearchpath* gladeSearchPath, int alpha, bool pen);
-    virtual ~FillOpacityDialog();
+    ~FillOpacityDialog() override;
 
 public:
-    virtual void show(GtkWindow* parent);
+    void show(GtkWindow* parent) override;
 
     int getResultAlpha() const;
 

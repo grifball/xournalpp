@@ -11,30 +11,37 @@
 
 #pragma once
 
-#include <map>
+#include <string>  // for string
+#include <vector>  // for vector
 
-#include "control/layer/LayerCtrlListener.h"
-#include "gui/IconNameHelper.h"
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gtk/gtk.h>                // for GtkWidget, GtkToolItem
 
-#include "AbstractToolItem.h"
+#include "control/layer/LayerCtrlListener.h"  // for LayerCtrlListener
+#include "enums/ActionType.enum.h"            // for ActionType
+#include "gui/IconNameHelper.h"               // for IconNameHelper
+#include "model/Layer.h"                      // for Layer, Layer::Index
+
+#include "AbstractToolItem.h"  // for AbstractToolItem
 
 class GladeGui;
 class PopupMenuButton;
 class LayerController;
+class ActionHandler;
 
 class ToolPageLayer: public AbstractToolItem, public LayerCtrlListener {
 public:
-    ToolPageLayer(LayerController* lc, GladeGui* gui, ActionHandler* handler, std::string id, ActionType type,
+    ToolPageLayer(LayerController* lc, ActionHandler* handler, std::string id, ActionType type,
                   IconNameHelper iconNameHelper);
-    virtual ~ToolPageLayer();
+    ~ToolPageLayer() override;
 
 public:
-    virtual std::string getToolDisplayName() const;
+    std::string getToolDisplayName() const override;
 
     // LayerCtrlListener
 public:
-    virtual void rebuildLayerMenu();
-    virtual void layerVisibilityChanged();
+    void rebuildLayerMenu() override;
+    void layerVisibilityChanged() override;
 
 protected:
     GtkWidget* createSpecialMenuEntry(const std::string& name);
@@ -55,31 +62,31 @@ protected:
      */
     void updateLayerData();
 
-    virtual GtkToolItem* newItem();
-    virtual GtkWidget* getNewToolIcon() const;
-    virtual GdkPixbuf* getNewToolPixbuf() const;
+    GtkToolItem* newItem() override;
+    GtkWidget* getNewToolIcon() const override;
+    GdkPixbuf* getNewToolPixbuf() const override;
 
 private:
-    void createLayerMenuItem(const std::string& text, int layerId);
+    void createLayerMenuItem(const std::string& text, Layer::Index layerId);
     void layerMenuClicked(GtkWidget* menu);
-    void createLayerMenuItemShow(int layerId);
+    void createLayerMenuItemShow(Layer::Index layerId);
     void layerMenuShowClicked(GtkWidget* menu);
 
-    void selectLayer(int layerId);
+    void selectLayer(Layer::Index layerId);
 
 private:
     LayerController* lc = nullptr;
-    GladeGui* gui = nullptr;
 
     GtkWidget* layerLabel = nullptr;
     GtkWidget* layerButton = nullptr;
     GtkWidget* menu = nullptr;
 
-    std::map<int, GtkWidget*> layerItems;
-    std::map<int, GtkWidget*> showLayerItems;
+    // Widget for the layer menu. Index = 0 is for background.
+    std::vector<GtkWidget*> layerItems;
+    std::vector<GtkWidget*> showLayerItems;
 
     PopupMenuButton* popupMenuButton = nullptr;
-    int menuY = 0;
+    unsigned int menuY = 0;
 
     /**
      * Menu is currently updating - ignore events

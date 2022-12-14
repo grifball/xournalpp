@@ -11,10 +11,11 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "BlockingJob.h"
+#include "BlockingJob.h"  // for BlockingJob
+
+class Control;
 
 
 class SaveJob: public BlockingJob {
@@ -22,17 +23,17 @@ public:
     SaveJob(Control* control);
 
 protected:
-    virtual ~SaveJob();
+    ~SaveJob() override;
 
 public:
-    virtual void run();
+    void run() override;
 
     bool save();
 
     static void updatePreview(Control* control);
 
 protected:
-    virtual void afterRun();
+    void afterRun() override;
 
 private:
     std::string lastError;

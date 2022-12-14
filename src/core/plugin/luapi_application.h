@@ -8,7 +8,9 @@
  *
  * @license GNU GPLv2 or later
  */
+#pragma once
 
+#include <climits>
 #include <cstring>
 #include <map>
 
@@ -18,17 +20,37 @@
 #include "control/Control.h"
 #include "control/ExportHelper.h"
 #include "control/PageBackgroundChangeController.h"
+#include "control/ScrollHandler.h"
 #include "control/Tool.h"
 #include "control/layer/LayerController.h"
 #include "control/pagetype/PageTypeHandler.h"
+#include "control/settings/Settings.h"
+#include "control/tools/EditSelection.h"
+#include "gui/Layout.h"
+#include "gui/MainWindow.h"
 #include "gui/XournalView.h"
+#include "gui/sidebar/Sidebar.h"
+#include "gui/sidebar/previews/base/SidebarToolbar.h"
 #include "gui/widgets/XournalWidget.h"
+#include "model/Document.h"
 #include "model/Font.h"
+#include "model/SplineSegment.h"
+#include "model/Stroke.h"
 #include "model/StrokeStyle.h"
 #include "model/Text.h"
+#include "model/XojPage.h"
+#include "plugin/Plugin.h"
+#include "undo/InsertUndoAction.h"
 #include "util/StringUtils.h"
 #include "util/XojMsgBox.h"
+#include "util/i18n.h"  // for _
 #include "util/safe_casts.h"
+
+extern "C" {
+#include <lauxlib.h>  // for luaL_Reg, luaL_newstate, luaL_requiref
+#include <lua.h>      // for lua_getglobal, lua_getfield, lua_setf...
+#include <lualib.h>   // for luaL_openlibs
+}
 
 /**
  * Renames file 'from' to file 'to' in the file system.
@@ -105,6 +127,56 @@ static int applib_saveAs(lua_State* L) {
 }
 
 /**
+ * Create a 'Open File' native dialog and return as a string
+ * the filepath the user chose to open.
+ *
+ * Examples:
+ *   path = app.getFilePath()
+ *   path = app.getFilePath({'*.bmp', '*.png'})
+ */
+static int applib_getFilePath(lua_State* L) {
+    GtkFileChooserNative* native =
+            gtk_file_chooser_native_new(_("Open file"), nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, nullptr, nullptr);
+    gint res;
+    int args_returned = 0;  // change to 1 if user chooses file
+    char* filename;
+
+    // Get vector of supported formats from Lua stack
+    std::vector<std::string> formats;
+    // stack now contains: -1 => table
+    lua_pushnil(L);
+    // stack now contains: -1 => nil; -2 => table
+    while (lua_next(L, -2)) {
+        // stack now contains: -1 => value; -2 => key; -3 => table
+        const char* value = lua_tostring(L, -1);
+        formats.push_back(value);
+        lua_pop(L, 1);
+        // stack now contains: -1 => key; -2 => table
+    }
+    // stack now contains: -1 => table
+    lua_pop(L, 1);  // Stack is now the same as it was on entry to this function
+    if (formats.size() > 0) {
+        GtkFileFilter* filterSupported = gtk_file_filter_new();
+        gtk_file_filter_set_name(filterSupported, _("Supported files"));
+        for (std::string format: formats) gtk_file_filter_add_pattern(filterSupported, format.c_str());
+        gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(native), filterSupported);
+    }
+
+    // Wait until user responds to dialog
+    res = gtk_native_dialog_run(GTK_NATIVE_DIALOG(native));
+    // Return the filename chosen to lua
+    if (res == GTK_RESPONSE_ACCEPT) {
+        filename = static_cast<char*>(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native)));
+        lua_pushlstring(L, filename, strlen(filename));
+        g_free(static_cast<gchar*>(filename));
+        args_returned = 1;
+    }
+    // Destroy the dialog and free memory
+    g_object_unref(native);
+    return args_returned;
+}
+
+/**
  * Example: local result = app.msgbox("Test123", {[1] = "Yes", [2] = "No"})
  * Pops up a message box with two buttons "Yes" and "No" and returns 1 for yes, 2 for no
  */
@@ -138,9 +210,12 @@ static int applib_msgbox(lua_State* L) {
 /**
  * Allow to register menupoints, this needs to be called from initUi
  *
- * Example: app.registerUi({["menu"] = "HelloWorld", callback="printMessage", accelerator="<Control>a"})
- * registers a menupoint with name "HelloWorld" executing a function named "printMessage",
+ * Example: app.registerUi({["menu"] = "HelloWorld", callback="printMessage", mode=1, accelerator="<Control>a"})
+ * registers a menupoint with name "HelloWorld" executing a function named "printMessage", in mode 1,
  * which can be triggered via the "<Control>a" keyboard accelerator
+ *
+ * The mode and accelerator are optional. When specifying the mode, the callback function should have one parameter
+   that receives the mode. This is useful for callback functions that are shared among multiple menu entries.
  */
 static int applib_registerUi(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
@@ -159,15 +234,18 @@ static int applib_registerUi(lua_State* L) {
     lua_getfield(L, 1, "accelerator");
     lua_getfield(L, 1, "menu");
     lua_getfield(L, 1, "callback");
+    lua_getfield(L, 1, "mode");
     // stack now has following:
-    //    1 = {"menu"="MenuName", callback="functionName", accelerator="<Control>a"}
-    //   -3 = "<Control>a"
-    //   -2 = "MenuName"
-    //   -1 = "functionName"
+    //    1 = {"menu"="MenuName", callback="functionName", mode=1, accelerator="<Control>a"}
+    //   -4 = "<Control>a"
+    //   -3 = "MenuName"
+    //   -2 = "functionName"
+    //   -1 = mode
 
-    const char* accelerator = luaL_optstring(L, -3, nullptr);
-    const char* menu = luaL_optstring(L, -2, nullptr);
-    const char* callback = luaL_optstring(L, -1, nullptr);
+    const char* accelerator = luaL_optstring(L, -4, nullptr);
+    const char* menu = luaL_optstring(L, -3, nullptr);
+    const char* callback = luaL_optstring(L, -2, nullptr);
+    const long mode = luaL_optinteger(L, -1, LONG_MAX);
     if (callback == nullptr) {
         luaL_error(L, "Missing callback function!");
     }
@@ -180,10 +258,10 @@ static int applib_registerUi(lua_State* L) {
 
     int toolbarId = -1;
 
-    int menuId = plugin->registerMenu(menu, callback, accelerator);
+    int menuId = plugin->registerMenu(menu, callback, mode, accelerator);
 
     // Make sure to remove all vars which are put to the stack before!
-    lua_pop(L, 3);
+    lua_pop(L, 4);
 
     // Add return value to the Stack
     lua_createtable(L, 0, 2);
@@ -202,7 +280,7 @@ static int applib_registerUi(lua_State* L) {
 /**
  * Execute an UI action (usually internally called from Toolbar / Menu)
  * The argument consists of a Lua table with 3 keys: "action", "group" and "enabled"
- * The key "group" is currently only used for debugging purpose and can savely be omitted.
+ * The key "group" is currently only used for debugging purpose and can safely be omitted.
  * The key "enabled" is true by default.
  *
  * Example 1: app.uiAction({["action"] = "ACTION_PASTE"})
@@ -245,12 +323,10 @@ static int applib_uiAction(lua_State* L) {
     }
 
     ActionType action = ActionType_fromString(actionStr);
-    GdkEvent* event = nullptr;
-    GtkMenuItem* menuitem = nullptr;
     GtkToolButton* toolbutton = nullptr;
 
     Control* ctrl = plugin->getControl();
-    ctrl->actionPerformed(action, group, event, menuitem, toolbutton, enabled);
+    ctrl->actionPerformed(action, group, toolbutton, enabled);
 
     // Make sure to remove all vars which are put to the stack before!
     lua_pop(L, 3);
@@ -326,6 +402,564 @@ static int applib_layerAction(lua_State* L) {
     ctrl->getLayerController()->actionPerformed(action);
 
     return 1;
+}
+
+/**
+ * Helper function for addStroke API. Parses pen settings from API call, taking
+ * in a Stroke and a chosen Layer, sets the pen settings, and applies the stroke.
+ */
+static void addStrokeHelper(lua_State* L, Stroke* stroke) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+    PageRef const& page = ctrl->getCurrentPage();
+    Layer* layer = page->getSelectedLayer();
+
+    std::string size;
+    double thickness;
+    int fillOpacity;
+    bool filled;
+    Color color;
+    std::string lineStyle;
+    ToolHandler* toolHandler;
+    const char* tool;
+    std::string allowUndoRedoAction;
+
+    // Get attributes.
+    lua_getfield(L, -1, "tool");
+    lua_getfield(L, -2, "width");
+    lua_getfield(L, -3, "color");
+    lua_getfield(L, -4, "fill");
+    lua_getfield(L, -5, "lineStyle");
+
+    tool = luaL_optstring(L, -5, "");  // We're gonna need the tool type.
+
+    toolHandler = ctrl->getToolHandler();
+
+    // TODO: (willnilges) Handle DrawingType?
+    // TODO: (willnilges) Break out Eraser functionality into a new API call.
+
+    // Set tool type
+    if (strcmp("highlighter", tool) == 0) {
+        stroke->setToolType(StrokeTool::HIGHLIGHTER);
+
+        size = toolSizeToString(toolHandler->getHighlighterSize());
+        thickness = toolHandler->getToolThickness(TOOL_HIGHLIGHTER)[toolSizeFromString(size)];
+
+        fillOpacity = toolHandler->getHighlighterFill();
+        filled = toolHandler->getHighlighterFillEnabled();
+
+        Tool& tool = toolHandler->getTool(TOOL_HIGHLIGHTER);
+        color = tool.getColor();
+    } else {
+        if (!(strcmp("pen", tool) == 0))
+            g_warning("%s", FC(_F("Unknown stroke type: \"{1}\", defaulting to pen") % tool));
+
+        stroke->setToolType(StrokeTool::PEN);
+
+        size = toolSizeToString(toolHandler->getPenSize());
+        thickness = toolHandler->getToolThickness(TOOL_PEN)[toolSizeFromString(size)];
+
+        fillOpacity = toolHandler->getPenFill();
+        filled = toolHandler->getPenFillEnabled();
+
+        Tool& tool = toolHandler->getTool(TOOL_PEN);
+        color = tool.getColor();
+        lineStyle = StrokeStyle::formatStyle(tool.getLineStyle());
+    }
+
+    // Set width
+    if (lua_isnumber(L, -4))  // Check if the width was provided
+        stroke->setWidth(lua_tonumber(L, -4));
+    else
+        stroke->setWidth(thickness);
+
+    // Set color
+    if (lua_isinteger(L, -3))  // Check if the color was provided
+        stroke->setColor(Color(lua_tointeger(L, -3)));
+    else
+        stroke->setColor(color);
+
+    // Set fill
+    if (lua_isinteger(L, -2))  // Check if fill settings were provided
+        stroke->setFill(lua_tointeger(L, -2));
+    else if (filled)
+        stroke->setFill(fillOpacity);
+    else
+        stroke->setFill(-1);  // No fill
+
+    // Set line style
+    if (lua_isstring(L, -1))  // Check if line style settings were provided
+        stroke->setLineStyle(StrokeStyle::parseStyle(lua_tostring(L, -1)));
+    else
+        stroke->setLineStyle(StrokeStyle::parseStyle(lineStyle.data()));
+
+    lua_pop(L, 5);  // Finally done with all that Lua data.
+
+    // Add the stroke
+    layer->addElement(stroke);
+    return;
+}
+
+/**
+ * Given a table containing a series of splines, draws a batch of strokes on the canvas.
+ * Expects a table of tables containing eight coordinate pairs, along with attributes of the stroke.
+ *
+ * Required Arguments: splines
+ * Optional Arguments: pressure, tool, width, color, fill, lineStyle
+ *
+ * If optional arguments are not provided, the specified tool settings are used.
+ * If the tool is not provided, the current pen settings are used.
+ * The only tools supported are Pen and Highlighter.
+ *
+ * The function expects 8 points per spline segment. Due to the nature of cubic
+ * splines, you must pass your points in a repeating pattern:
+ * startX, startY, ctrl1X, ctrl1Y, ctrl2X, ctrl2Y, endX, endY, startX, startY, ...
+ *
+ * The function checks that the length of the coordinate table is divisible by eight, and will throw
+ * an error if it is not.
+ *
+ * Example: app.addSplines({
+ *            ["splines"] = { -- The outer table is a table of strokes
+ *                ["coordinates"] = { -- Each inner table is a coord stream that represents SplineSegments that can be
+ * assembled into a stroke
+ *                  [1] = 880.0, // Every eight coordinates (4 pairs) is a SplineSegment
+ *                  [2] = 874.0,
+ *                  [3] = 881.3295,
+ *                  [4] = 851.5736,
+ *                  [5] = 877.2915,
+ *                  [6] = 828.2946,
+ *                  [7] = 875.1697,
+ *                  [8] = 806.0,
+ *                  ... -- A spline can be made up of as many SplineSegments as is necessary.
+ *                },
+ *                -- Tool options are also specified per-stroke
+ *                ["width"] = 1.4,
+ *                ["color"] = 0xff0000,
+ *                ["fill"] = 0,
+ *                ["tool"] = "pen",
+ *                ["lineStyle"] = "plain"
+ *            },
+ *            ["allowUndoRedoAction"] = "grouped", -- Each batch of splines can be grouped into one undo/redo action (or
+ * "individual" or "none")
+ *        })
+ */
+
+static int applib_addSplines(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+    std::vector<Element*> strokes;
+    const char* allowUndoRedoAction;
+
+    // Discard any extra arguments passed in
+    lua_settop(L, 1);
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    lua_getfield(L, 1, "splines");
+    if (!lua_istable(L, -1))
+        luaL_error(L, "Missing spline table!");
+
+    size_t numSplines = lua_rawlen(L, -1);
+    for (size_t a = 1; a <= numSplines; a++) {
+        std::vector<double> coordStream;
+        Stroke* stroke = new Stroke();
+        // Get coordinates
+        lua_pushnumber(L, a);
+        lua_gettable(L, -2);
+        lua_getfield(L, -1, "coordinates");
+        if (!lua_istable(L, -1))
+            luaL_error(L, "Missing coordinate table!");
+        size_t numCoords = lua_rawlen(L, -1);
+        for (size_t b = 1; b <= numCoords; b++) {
+            lua_pushnumber(L, b);
+            lua_gettable(L, -2);
+            double point = lua_tonumber(L, -1);
+            coordStream.push_back(point);  // Each segment is going to have multiples of 8 points.
+            lua_pop(L, 1);
+        }
+        // pop value + copy of key, leaving original key
+        lua_pop(L, 1);
+        // Handle those points
+        // Check if the list is divisible by 8.
+        if (coordStream.size() % 8 != 0)
+            luaL_error(L, "Point table incomplete!");
+
+        // Now take that gigantic list of splines and create SplineSegments out of them.
+        long unsigned int i = 0;
+        while (i < coordStream.size()) {
+            // start, ctrl1, ctrl2, end
+            Point start = Point(coordStream.at(i), coordStream.at(i + 1), Point::NO_PRESSURE);
+            Point ctrl1 = Point(coordStream.at(i + 2), coordStream.at(i + 3), Point::NO_PRESSURE);
+            Point ctrl2 = Point(coordStream.at(i + 4), coordStream.at(i + 5), Point::NO_PRESSURE);
+            Point end = Point(coordStream.at(i + 6), coordStream.at(i + 7), Point::NO_PRESSURE);
+            i += 8;
+            SplineSegment segment = SplineSegment(start, ctrl1, ctrl2, end);
+            std::list<Point> raster = segment.toPointSequence();
+            for (Point point: raster) stroke->addPoint(point);
+            // TODO: (willnilges) Is there a way we can get Pressure with Splines?
+        }
+
+        if (stroke->getPointCount() >= 2) {
+            // Finish building the Stroke and apply it to the layer.
+            addStrokeHelper(L, stroke);
+            strokes.push_back(stroke);
+        } else
+            g_warning("Stroke shorter than two points. Discarding. (Has %d)", stroke->getPointCount());
+        // Onto the next stroke
+        lua_pop(L, 1);
+    }
+
+    lua_pop(L, 1);  // Stack is now the same as it was on entry to this function
+
+    // Check how the user wants to handle undoing
+    lua_getfield(L, 1, "allowUndoRedoAction");
+    allowUndoRedoAction = luaL_optstring(L, -1, "grouped");
+    if (strcmp("grouped", allowUndoRedoAction) == 0) {
+        PageRef const& page = ctrl->getCurrentPage();
+        Layer* layer = page->getSelectedLayer();
+        UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
+        undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, strokes));
+    } else if (strcmp("individual", allowUndoRedoAction) == 0) {
+        PageRef const& page = ctrl->getCurrentPage();
+        Layer* layer = page->getSelectedLayer();
+        UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
+        for (Element* element: strokes) undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, element));
+    } else if (strcmp("none", allowUndoRedoAction) == 0)
+        g_warning("Not allowing undo/redo action.");
+    else
+        g_warning("Unrecognized undo/redo option: %s", allowUndoRedoAction);
+    lua_pop(L, 1);
+    return 0;
+}
+
+/**
+ * Given a table of sets of points, draws a batch of strokes on the canvas.
+ * Expects three tables of equal length: one for X, one for Y, and one for
+ * stroke pressure, along with attributes of the stroke. Each stroke has
+ * attributes handled individually.
+ *
+ * Required Arguments: X, Y
+ * Optional Arguments: pressure, tool, width, color, fill, lineStyle
+ *
+ * If optional arguments are not provided, the specified tool settings are used.
+ * If the tool is not provided, the current pen settings are used.
+ * The only tools supported are Pen and Highlighter.
+ *
+ * The function checks for consistency among table lengths, and throws an
+ * error if there is a discrepancy
+ *
+ * Example:
+ *
+ * app.addStrokes({
+ *     ["strokes"] = { -- The outer table is a table of strokes
+ *         {   -- Inside a stroke are three tables of equivalent length that represent a series of points
+ *             ["x"]        = { [1] = 110.0, [2] = 120.0, [3] = 130.0, ... },
+ *             ["y"]        = { [1] = 200.0, [2] = 205.0, [3] = 210.0, ... },
+ *             ["pressure"] = { [1] = 0.8,   [2] = 0.9,   [3] = 1.1, ... },
+ *             -- Each stroke has individually handled options
+ *             ["tool"] = "pen",
+ *             ["width"] = 3.8,
+ *             ["color"] = 0xa000f0,
+ *             ["fill"] = 0,
+ *             ["lineStyle"] = "solid",
+ *         },
+ *         {
+ *             ["x"]        = { [1] = 310.0, [2] = 320.0, [3] = 330.0, ... },
+ *             ["y"]        = { [1] = 300.0, [2] = 305.0, [3] = 310.0, ... },
+ *             ["pressure"] = { [1] = 3.0,   [2] = 3.0,   [3] = 3.0, ... },
+ *             ["tool"] = "pen",
+ *             ["width"] = 1.21,
+ *             ["color"] = 0x808000,
+ *             ["fill"] = 0,
+ *             ["lineStyle"] = "solid",
+ *         },
+ *         {
+ *             ["x"]        = { [1] = 27.0,  [2] = 28.0,  [3] = 30.0, ... },
+ *             ["y"]        = { [1] = 100.0, [2] = 102.3, [3] = 102.5, ... },
+ *             ["pressure"] = { [1] = 1.0,   [2] = 1.0,   [3] = 1.0, ... },
+ *             ["tool"] = "pen",
+ *             ["width"] = 1.0,
+ *             ["color"] = 0x00aaaa,
+ *             ["fill"] = 0,
+ *             ["lineStyle"] = "dashdot",
+ *         },
+ *     },
+ *     ["allowUndoRedoAction"] = "grouped", -- Each batch of strokes can be grouped into one undo/redo action (or
+ * "individual" or "none")
+ * })
+ */
+static int applib_addStrokes(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+    std::vector<Element*> strokes;
+    const char* allowUndoRedoAction;
+
+    // Discard any extra arguments passed in
+    lua_settop(L, 1);
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    lua_getfield(L, 1, "strokes");
+    if (!lua_istable(L, -1))
+        luaL_error(L, "Missing stroke table!");
+    size_t numStrokes = lua_rawlen(L, -1);
+    for (size_t a = 1; a <= numStrokes; a++) {
+        std::vector<double> xStream;
+        std::vector<double> yStream;
+        std::vector<double> pressureStream;
+        Stroke* stroke = new Stroke();
+
+        // Fetch table of X values from the Lua stack
+        lua_pushnumber(L, a);
+        lua_gettable(L, -2);
+
+        lua_getfield(L, -1, "x");
+        if (!lua_istable(L, -1))
+            luaL_error(L, "Missing X-Coordinate table!");
+        size_t xPoints = lua_rawlen(L, -1);
+        for (size_t b = 1; b <= xPoints; b++) {
+            lua_pushnumber(L, b);
+            lua_gettable(L, -2);
+            double value = lua_tonumber(L, -1);
+            xStream.push_back(value);
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+
+        // Fetch table of Y values form the Lua stack
+        lua_getfield(L, -1, "y");
+        if (!lua_istable(L, -1))
+            luaL_error(L, "Missing Y-Coordinate table!");
+        size_t yPoints = lua_rawlen(L, -1);
+        for (size_t b = 1; b <= yPoints; b++) {
+            lua_pushnumber(L, b);
+            lua_gettable(L, -2);
+            double value = lua_tonumber(L, -1);
+            yStream.push_back(value);
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+
+        // Fetch table of pressure values from the Lua stack
+        lua_getfield(L, -1, "pressure");
+        if (lua_istable(L, -1)) {
+            size_t pressurePoints = lua_rawlen(L, -1);
+            for (size_t b = 1; b <= pressurePoints; b++) {
+                lua_pushnumber(L, b);
+                lua_gettable(L, -2);
+                double value = lua_tonumber(L, -1);
+                pressureStream.push_back(value);
+                lua_pop(L, 1);
+            }
+        } else
+            g_warning("Missing pressure table. Assuming NO_PRESSURE.");
+
+        lua_pop(L, 1);
+
+        // Handle those points
+        // Make sure all vectors are the same length.
+        if (xStream.size() != yStream.size()) {
+            luaL_error(L, "X and Y vectors are not equal length!");
+        }
+        if (xStream.size() != pressureStream.size() && pressureStream.size() > 0)
+            luaL_error(L, "Pressure vector is not equal length!");
+
+        // Check and make sure there's enough points (need at least 2)
+        if (xStream.size() < 2) {
+            g_warning("Stroke shorter than two points. Discarding. (Has %ld/2)", xStream.size());
+            return 1;
+        }
+        // Add points to the stroke. Include pressure, if it exists.
+        if (pressureStream.size() > 0) {
+            for (long unsigned int i = 0; i < xStream.size(); i++) {
+                Point myPoint = Point(xStream.at(i), yStream.at(i), pressureStream.at(i));
+                stroke->addPoint(myPoint);
+            }
+        } else {
+            for (long unsigned int i = 0; i < xStream.size(); i++) {
+                Point myPoint = Point(xStream.at(i), yStream.at(i), Point::NO_PRESSURE);
+                stroke->addPoint(myPoint);
+            }
+        }
+
+        // Finish building the Stroke and apply it to the layer.
+        addStrokeHelper(L, stroke);
+        strokes.push_back(stroke);
+        // Onto the next stroke
+        lua_pop(L, 1);
+    }
+
+    // Check how the user wants to handle undoing
+    lua_getfield(L, 1, "allowUndoRedoAction");
+    allowUndoRedoAction = luaL_optstring(L, -1, "grouped");
+    if (strcmp("grouped", allowUndoRedoAction) == 0) {
+        PageRef const& page = ctrl->getCurrentPage();
+        Layer* layer = page->getSelectedLayer();
+        UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
+        undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, strokes));
+    } else if (strcmp("individual", allowUndoRedoAction) == 0) {
+        PageRef const& page = ctrl->getCurrentPage();
+        Layer* layer = page->getSelectedLayer();
+        UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
+        for (Element* element: strokes) undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, element));
+    } else if (strcmp("none", allowUndoRedoAction) == 0)
+        g_warning("Not allowing undo/redo action.");
+    else
+        g_warning("Unrecognized undo/redo option: %s", allowUndoRedoAction);
+
+    lua_pop(L, 1);  // Stack is now the same as it was on entry to this function
+
+    return 0;
+}
+
+/**
+ * Puts a Lua Table of the Strokes (from the selection tool / selected layer) onto the stack.
+ * Is inverse to app.addStrokes
+ *
+ * Required argument: type ("selection" or "layer")
+ *
+ * Example: local strokes = app.getStrokes("selection")
+ *
+ * possible return value:
+ * {
+ *         {   -- Inside a stroke are three tables of equivalent length that represent a series of points
+ *             ["x"]        = { [1] = 110.0, [2] = 120.0, [3] = 130.0, ... },
+ *             ["y"]        = { [1] = 200.0, [2] = 205.0, [3] = 210.0, ... },
+ *             -- pressure is only present if pressure is set -> pressure member might be nil
+ *             ["pressure"] = { [1] = 0.8,   [2] = 0.9,   [3] = 1.1, ... },
+ *             -- Each stroke has individually handled options
+ *             ["tool"] = "pen",
+ *             ["width"] = 3.8,
+ *             ["color"] = 0xa000f0,
+ *             ["fill"] = 0,
+ *             ["lineStyle"] = "plain",
+ *         },
+ *         {
+ *             ["x"]         = {207, 207.5, 315.2, 315.29, 207.5844},
+ *             ["y"]         = {108, 167.4, 167.4, 108.70, 108.7094},
+ *             ["tool"]      = "pen",
+ *             ["width"]     = 0.85,
+ *             ["color"]     = 16744448,
+ *             ["fill"]      = -1,
+ *             ["lineStyle"] = "plain",
+ *         },
+ *         {
+ *             ["x"]         = {387.60, 387.6042, 500.879, 500.87, 387.604},
+ *             ["y"]         = {153.14, 215.8661, 215.866, 153.14, 153.148},
+ *             ["tool"]      = "pen",
+ *             ["width"]     = 0.85,
+ *             ["color"]     = 16744448,
+ *             ["fill"]      = -1,
+ *             ["lineStyle"] = "plain",
+ *         },
+ * }
+ */
+static int applib_getStrokes(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    std::string type = luaL_checkstring(L, 1);
+    std::vector<Element*> elements = {};
+    Control* control = plugin->getControl();
+
+    if (type == "Layer") {
+        auto sel = control->getWindow()->getXournal()->getSelection();
+        if (sel) {
+            control->clearSelection();  // otherwise strokes in the selection won't be recognized
+        }
+        elements = control->getCurrentPage()->getSelectedLayer()->getElements();
+    } else if (type == "selection") {
+        auto sel = control->getWindow()->getXournal()->getSelection();
+        if (sel) {
+            elements = sel->getElements();
+        } else {
+            g_warning("There is no selection! ");
+            return 0;
+        }
+    } else {
+        g_warning("Unknown argument: %s", type.c_str());
+        return 0;
+    }
+
+    lua_newtable(L);  // create table of the elements
+    int currStrokeNo = 0;
+    int currPointNo = 0;
+
+    for (Element* e: elements) {
+        if (e->getType() == ELEMENT_STROKE) {
+            auto* s = static_cast<Stroke*>(e);
+            lua_pushnumber(L, ++currStrokeNo);  // index for later (settable)
+            lua_newtable(L);                    // create stroke table
+
+            lua_newtable(L);  // create table of x-coordinates
+            for (auto p: s->getPointVector()) {
+                lua_pushnumber(L, ++currPointNo);
+                lua_pushnumber(L, p.x);
+                lua_settable(L, -3);  // pops key and value from stack
+            }
+            lua_setfield(L, -2, "x");  // add x-coordinates to stroke
+            currPointNo = 0;
+
+            lua_newtable(L);  // create table for y-coordinates
+            for (auto p: s->getPointVector()) {
+                lua_pushnumber(L, ++currPointNo);
+                lua_pushnumber(L, p.y);
+                lua_settable(L, -3);
+            }
+            lua_setfield(L, -2, "y");  // add y-coordinates to stroke
+            currPointNo = 0;
+
+            if (s->hasPressure()) {
+                lua_newtable(L);  // create table for pressures
+                for (auto p: s->getPointVector()) {
+                    lua_pushnumber(L, ++currPointNo);
+                    lua_pushnumber(L, p.z);
+                    lua_settable(L, -3);
+                }
+                lua_setfield(L, -2, "pressure");  // add pressures to stroke
+                currPointNo = 0;
+            }
+
+            StrokeTool tool = s->getToolType();
+            if (tool == StrokeTool::PEN) {
+                lua_pushstring(L, "pen");
+            } else if (tool == StrokeTool::HIGHLIGHTER) {
+                lua_pushstring(L, "highlighter");
+            } else {
+                g_warning("Unknown STROKE_TOOL. ");
+                return 0;
+            }
+            lua_setfield(L, -2, "tool");  // add tool to stroke
+
+            lua_pushnumber(L, s->getWidth());
+            lua_setfield(L, -2, "width");  // add width to stroke
+
+            lua_pushinteger(L, int(uint32_t(s->getColor())));
+            lua_setfield(L, -2, "color");  // add color to stroke
+
+            lua_pushinteger(L, s->getFill());
+            lua_setfield(L, -2, "fill");  // add fill to stroke
+
+            lua_pushstring(L, StrokeStyle::formatStyle(s->getLineStyle()).c_str());
+            lua_setfield(L, -2, "lineStyle");  // add linestyle to stroke
+
+            lua_settable(L, -3);  // add stroke to elements
+        }
+    }
+    return 1;
+}
+
+/**
+ * Notifies program of any updates to the working document caused
+ * by the API.
+ *
+ * Example: app.refreshPage()
+ */
+static int applib_refreshPage(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+    PageRef const& page = ctrl->getCurrentPage();
+    if (page)
+        page->firePageChanged();
+    else
+        g_warning("Called applib_refreshPage, but there is no current page.");
+    return 0;
 }
 
 /**
@@ -466,7 +1100,7 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
             luaL_error(L, "Current page has no pdf background, cannot use relative mode!");
         }
     }
-    if (selected >= 0 && selected < static_cast<int>(doc->getPdfPageCount())) {
+    if (selected < doc->getPdfPageCount()) {
         // no need to set a type, if we set the page number the type is also set
         page->setBackgroundPdfPageNr(selected);
 
@@ -479,6 +1113,24 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
     return 1;
 }
 
+/*
+ * pushes an rectangle (width, height, x, y) to the lua stack as a new table
+ * in most cases you'll want to do a
+ * lua_newtable(L);  // create rectangle table
+ * before and a
+ * lua_setfield(L, -2, "rectangleTable");  // add rectangle table to other table
+ * after this function
+ */
+static void pushRectangleHelper(lua_State* L, xoj::util::Rectangle<double> rect) {
+    lua_pushnumber(L, rect.width);
+    lua_setfield(L, -2, "width");
+    lua_pushnumber(L, rect.height);
+    lua_setfield(L, -2, "height");
+    lua_pushnumber(L, rect.x);
+    lua_setfield(L, -2, "x");
+    lua_pushnumber(L, rect.y);
+    lua_setfield(L, -2, "y");
+}
 /*
  * Returns a table encoding all info on the chosen tool (active, pen, highlighter, eraser or text)
  * in a Lua table of one of the following shapes
@@ -539,6 +1191,33 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
  *
  * See /src/control/ToolEnums.cpp for possible values of "size".
  *
+ * for seiection:
+ * {
+ *   -- bounding box as drawn in the UI (includes padding on all sides)
+ *   "boundingBox" = {
+ *      "width"  = number
+ *      "height" = number
+ *      "x"      = number
+ *      "y"      = number
+ *   }
+ *   -- same as "boundingBox" but the state before any transformation was applied
+ *   "originalBounds" = {
+ *      "width"  = number
+ *      "height" = number
+ *      "x"      = number
+ *      "y"      = number
+ *   }
+ *   -- bounds used for snapping (doesn't include padding and doesn't account to line width)
+ *   -- for more information see https://github.com/xournalpp/xournalpp/pull/4359#issuecomment-1304395011
+ *   "snappedBounds" = {
+ *      "width"  = number
+ *      "height" = number
+ *      "x"      = number
+ *      "y"      = number
+ *   }
+ *   "rotation" = number
+ *   "isRotationSupported" = bool
+ * }
  *
  * Example 1: local penInfo = app.getToolInfo("pen")
  *            local size = penInfo["size"]
@@ -566,6 +1245,11 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
  * Example 6: local highlighterInfo = app.getToolInfo("highlighter")
  *            local sizeName = highlighterInfo["size"]["name"]
  *            local opacity = highlighterInfo["fillOpacity"]
+ *
+ * Example 7: local selectionInfo = app.getToolInfo("selection")
+ *            local rotation = selectionInfo["rotation"]
+ *            local boundingX = selectionInfo["boundingBox"]["x"]
+ *            local snappedBoundsWidth = selectionInfo["snappedBounds"]["width"]
  */
 
 static int applib_getToolInfo(lua_State* L) {
@@ -752,6 +1436,32 @@ static int applib_getToolInfo(lua_State* L) {
         lua_pushliteral(L, "color");
         lua_pushinteger(L, int(uint32_t(color)));
         lua_settable(L, -3);
+    } else if (strcmp(mode, "selection") == 0) {
+        auto sel = control->getWindow()->getXournal()->getSelection();
+        if (!sel) {
+            g_warning("There is no selection! ");
+            return 0;
+        }
+        auto rect = sel->getRect();
+
+        lua_newtable(L);  // create return table
+                          //
+        lua_pushnumber(L, sel->getRotation());
+        lua_setfield(L, -2, "rotation");
+        lua_pushboolean(L, sel->isRotationSupported());
+        lua_setfield(L, -2, "isRotationSupported");
+
+        lua_newtable(L);  // create originalBounds table
+        pushRectangleHelper(L, sel->getOriginalBounds());
+        lua_setfield(L, -2, "originalBounds");  // add originalBounds table to return table
+
+        lua_newtable(L);  // create snappedBounds table
+        pushRectangleHelper(L, sel->getSnappedBounds());
+        lua_setfield(L, -2, "snappedBounds");  // add snappedBounds table to return table
+
+        lua_newtable(L);  // create boundingBox table
+        pushRectangleHelper(L, rect);
+        lua_setfield(L, -2, "boundingBox");  // add boundingBox table to return table
     }
     return 1;
 }
@@ -793,7 +1503,6 @@ static int applib_getDocumentStructure(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* control = plugin->getControl();
     Document* doc = control->getDocument();
-    LayerController* lc = control->getLayerController();
 
     lua_newtable(L);
 
@@ -844,7 +1553,7 @@ static int applib_getDocumentStructure(lua_State* L) {
         lua_newtable(L);  // beginning of table for background layer
 
         lua_pushliteral(L, "isVisible");
-        lua_pushboolean(L, page->isLayerVisible(0));
+        lua_pushboolean(L, page->isLayerVisible(0U));
         lua_settable(L, -3);
 
         lua_pushliteral(L, "name");
@@ -861,7 +1570,7 @@ static int applib_getDocumentStructure(lua_State* L) {
             lua_newtable(L);  // beginning of table for layer l
 
             lua_pushliteral(L, "name");
-            lua_pushstring(L, lc->getLayerNameById(currLayer).c_str());
+            lua_pushstring(L, l->getName().c_str());
             lua_settable(L, -3);
 
             lua_pushliteral(L, "isVisible");
@@ -885,7 +1594,7 @@ static int applib_getDocumentStructure(lua_State* L) {
     lua_settable(L, -3);  // end of pages table
 
     lua_pushliteral(L, "currentPage");
-    lua_pushinteger(L, lc->getCurrentPageId() + 1);
+    lua_pushinteger(L, control->getCurrentPageNo() + 1);
     lua_settable(L, -3);
 
     lua_pushliteral(L, "pdfBackgroundFilename");
@@ -1044,7 +1753,7 @@ static int applib_setCurrentLayer(lua_State* L) {
     size_t layerCount = page->getLayerCount();
     size_t layerId = luaL_checkinteger(L, 1);
 
-    if (layerId < 0 || layerId > layerCount) {
+    if (layerId > layerCount) {
         luaL_error(L, "No layer with layer ID %d", layerId);
     }
 
@@ -1073,7 +1782,7 @@ static int applib_setLayerVisibility(lua_State* L) {
         enabled = lua_toboolean(L, 1);
     }
 
-    int layerId = control->getCurrentPage()->getSelectedLayerId();
+    auto layerId = control->getCurrentPage()->getSelectedLayerId();
     control->getLayerController()->setLayerVisible(layerId, enabled);
     return 1;
 }
@@ -1175,7 +1884,7 @@ static int applib_getDisplayDpi(lua_State* L) {
  * app.export({["outputFile"] = "Test.svg", ["range"] = "3-", ["background"] = "unruled"})
  *
  * Example 3:
- * app.export({["outputFile"] = "Test.png", ["range"] = "1-2", ["background"] = "all", ["pngWidth"] = 800})
+ * app.export({["outputFile"] = "Test.png", ["layerRange"] = "1-2", ["background"] = "all", ["pngWidth"] = 800})
  **/
 static int applib_export(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
@@ -1188,14 +1897,16 @@ static int applib_export(lua_State* L) {
 
     lua_getfield(L, 1, "outputFile");
     lua_getfield(L, 1, "range");
+    lua_getfield(L, 1, "layerRange");
     lua_getfield(L, 1, "background");
     lua_getfield(L, 1, "progressiveMode");
     lua_getfield(L, 1, "pngDpi");
     lua_getfield(L, 1, "pngWidth");
     lua_getfield(L, 1, "dpiHeight");
 
-    const char* outputFile = luaL_optstring(L, -7, nullptr);
-    const char* range = luaL_optstring(L, -6, nullptr);
+    const char* outputFile = luaL_optstring(L, -8, nullptr);
+    const char* range = luaL_optstring(L, -7, nullptr);
+    const char* layerRange = luaL_optstring(L, -6, nullptr);
     const char* background = luaL_optstring(L, -5, "all");
     bool progressiveMode = lua_toboolean(L, -4);  // true unless nil or false
     int pngDpi = luaL_optinteger(L, -3, -1);
@@ -1217,17 +1928,48 @@ static int applib_export(lua_State* L) {
     auto extension = file.extension();
 
     if (extension == ".pdf") {
-        ExportHelper::exportPdf(doc, outputFile, range, bgType, progressiveMode);
+        ExportHelper::exportPdf(doc, outputFile, range, layerRange, bgType, progressiveMode);
     } else if (extension == ".svg" || extension == ".png") {
-        ExportHelper::exportImg(doc, outputFile, range, pngDpi, pngWidth, pngHeight, bgType);
+        ExportHelper::exportImg(doc, outputFile, range, layerRange, pngDpi, pngWidth, pngHeight, bgType);
     }
 
     // Make sure to remove all vars which are put to the stack before!
-    lua_pop(L, 7);
+    lua_pop(L, 8);
 
     return 1;
 }
 
+/**
+ * Opens a file and by default asks the user what to do with the old document.
+ * Returns true when successful, false otherwise.
+ *
+ * Example 1: local success = app.openFile("home/username/bg.pdf")
+ *            asks what to do with the old document and loads the file afterwards, scrolls to top
+ *
+ * Example 2: local sucess = app.openFile("home/username/paintings.xopp", 3, true)
+ *            opens the file, scrolls to the 3rd page and does not ask to save the old document
+ */
+
+static int applib_openFile(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* control = plugin->getControl();
+
+    const char* filename = luaL_checkstring(L, 1);
+
+    int scrollToPage = 0;  // by default scroll to the same page like last time
+    if (lua_isinteger(L, 2)) {
+        scrollToPage = lua_tointeger(L, 2);
+    }
+
+    bool forceOpen = false;  // by default asks the user
+    if (lua_isboolean(L, 3)) {
+        forceOpen = lua_toboolean(L, 3);
+    }
+
+    const bool success = control->openFile(fs::path(filename), scrollToPage - 1, forceOpen);
+    lua_pushboolean(L, success);
+    return 1;
+}
 
 /*
  * The full Lua Plugin API.
@@ -1257,6 +1999,12 @@ static const luaL_Reg applib[] = {{"msgbox", applib_msgbox},
                                   {"scaleTextElements", applib_scaleTextElements},
                                   {"getDisplayDpi", applib_getDisplayDpi},
                                   {"export", applib_export},
+                                  {"addStrokes", applib_addStrokes},
+                                  {"addSplines", applib_addSplines},
+                                  {"getFilePath", applib_getFilePath},
+                                  {"refreshPage", applib_refreshPage},
+                                  {"getStrokes", applib_getStrokes},
+                                  {"openFile", applib_openFile},
                                   // Placeholder
                                   //	{"MSG_BT_OK", nullptr},
 

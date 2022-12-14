@@ -11,66 +11,87 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <cstddef>  // for size_t
+#include <memory>   // for shared_ptr
+#include <string>   // for string
 
-#include "control/layer/LayerCtrlListener.h"
-#include "gui/IconNameHelper.h"
-#include "gui/sidebar/previews/base/SidebarPreviewBase.h"
+#include "control/layer/LayerCtrlListener.h"               // for LayerCtrlL...
+#include "gui/IconNameHelper.h"                            // for IconNameHe...
+#include "gui/sidebar/previews/base/SidebarPreviewBase.h"  // for SidebarPre...
+#include "gui/sidebar/previews/base/SidebarToolbar.h"      // for SidebarAct...
+#include "model/Layer.h"                                   // for Layer, Lay...
+
+class Control;
+class GladeGui;
+class LayerController;
+class SidebarLayersContextMenu;
 
 
 class SidebarPreviewLayers: public SidebarPreviewBase, public LayerCtrlListener {
 public:
-    SidebarPreviewLayers(Control* control, GladeGui* gui, SidebarToolbar* toolbar, bool stacked);
-    virtual ~SidebarPreviewLayers();
+    SidebarPreviewLayers(Control* control, GladeGui* gui, SidebarToolbar* toolbar, bool stacked,
+                         std::shared_ptr<SidebarLayersContextMenu> contextMenu);
+
+    ~SidebarPreviewLayers() override;
 
 public:
-    virtual void rebuildLayerMenu();
-    virtual void layerVisibilityChanged();
+    void rebuildLayerMenu() override;
+    void layerVisibilityChanged() override;
 
 public:
     /**
      * Called when an action is performed
      */
-    void actionPerformed(SidebarActions action);
+    void actionPerformed(SidebarActions action) override;
 
-    void enableSidebar();
-
-    /**
-     * @overwrite
-     */
-    virtual std::string getName();
+    void enableSidebar() override;
 
     /**
      * @overwrite
      */
-    virtual std::string getIconName();
+    std::string getName() override;
+
+    /**
+     * @overwrite
+     */
+    std::string getIconName() override;
 
     /**
      * Update the preview images
      * @overwrite
      */
-    virtual void updatePreviews();
+    void updatePreviews() override;
 
     /**
      * Select a layer
      */
-    void layerSelected(size_t layerIndex);
+    void layerSelected(Layer::Index layerIndex);
 
     /**
      * A layer was hidden / showed
      */
-    void layerVisibilityChanged(int layerIndex, bool enabled);
+    void layerVisibilityChanged(Layer::Index layerIndex, bool enabled);
+
+    /**
+     * Opens the layer preview context menu, at the current cursor position, for
+     * the given layer.
+     */
+    void openPreviewContextMenu() override;
 
 protected:
     void updateSelectedLayer();
 
 public:
     // DocumentListener interface (only the part which is not handled by SidebarPreviewBase)
-    virtual void pageSizeChanged(size_t page);
-    virtual void pageChanged(size_t page);
+    void pageSizeChanged(size_t page) override;
+    void pageChanged(size_t page) override;
 
 private:
+    /**
+     * @return things that can reasonably be done to a given layer (e.g. merge down, copy, delete, etc.)
+     */
+    [[nodiscard]] static auto getViableActions(Layer::Index layerIndex, Layer::Index layerCount) -> SidebarActions;
+
     /**
      * Layer Controller
      */
@@ -82,4 +103,6 @@ private:
     bool stacked;
 
     IconNameHelper iconNameHelper;
+
+    std::shared_ptr<SidebarLayersContextMenu> contextMenu;
 };

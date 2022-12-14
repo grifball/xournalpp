@@ -11,18 +11,20 @@
 
 #pragma once
 
-#include "BaseStrokeHandler.h"
+#include <vector>  // for vector
 
-class CoordinateSystemHandler: public BaseStrokeHandler {
+#include "model/PageRef.h"  // for PageRef
+
+#include "BaseShapeHandler.h"  // for BaseShapeHandler
+
+class XournalView;
+
+class CoordinateSystemHandler: public BaseShapeHandler {
 public:
-    CoordinateSystemHandler(XournalView* xournal, XojPageView* redrawable, const PageRef& page, bool flipShift = false,
-                            bool flipControl = false);
-    virtual ~CoordinateSystemHandler();
+    CoordinateSystemHandler(Control* control, const PageRef& page, bool flipShift = false, bool flipControl = false);
+    ~CoordinateSystemHandler() override;
 
 private:
-    virtual void drawShape(Point& currentPoint, const PositionInputData& pos);
-
-private:
-    Point startPoint;
-    bool started = false;
+    auto createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
+            -> std::pair<std::vector<Point>, Range> override;
 };

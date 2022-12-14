@@ -1,34 +1,36 @@
 #include "ColorToolItem.h"
 
-#include <cinttypes>
+#include <array>    // for array
+#include <cstdio>   // for snprintf, size_t
+#include <memory>   // for unique_ptr
+#include <utility>  // for move
 
-#include <config.h>
+#include <glib.h>  // for gchar
 
-#include "control/ToolEnums.h"
-#include "gui/toolbarMenubar/icon/ColorSelectImage.h"
-#include "util/StringUtils.h"
-#include "util/Util.h"
-#include "util/i18n.h"
+#include "control/ToolEnums.h"                         // for TOOL_CAP_COLOR
+#include "control/ToolHandler.h"                       // for ToolHandler
+#include "gui/toolbarMenubar/AbstractToolItem.h"       // for AbstractToolItem
+#include "gui/toolbarMenubar/icon/ColorSelectImage.h"  // for ColorSelectImage
+#include "util/i18n.h"                                 // for _
+
+class ActionHandler;
 
 bool ColorToolItem::inUpdate = false;
+
+ColorToolItem::~ColorToolItem() = default;
 
 ColorToolItem::ColorToolItem(ActionHandler* handler, ToolHandler* toolHandler, GtkWindow* parent, NamedColor namedColor,
                              bool selektor):
         AbstractToolItem("", handler, selektor ? ACTION_SELECT_COLOR_CUSTOM : ACTION_SELECT_COLOR),
-        toolHandler(toolHandler),
-        namedColor{std::move(namedColor)} {
+        namedColor{std::move(namedColor)},
+        toolHandler(toolHandler) {
     this->group = GROUP_COLOR;
 }
-
-ColorToolItem::~ColorToolItem() { freeIcons(); }
 
 /**
  * Free the allocated icons
  */
-void ColorToolItem::freeIcons() {
-    delete this->icon;
-    this->icon = nullptr;
-}
+void ColorToolItem::freeIcons() { this->icon.reset(); }
 
 auto ColorToolItem::isSelector() const -> bool { return this->action == ACTION_SELECT_COLOR_CUSTOM; }
 
@@ -68,9 +70,10 @@ auto ColorToolItem::getId() const -> std::string {
         return "COLOR_SELECT";
     }
 
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "COLOR(%zu)", this->namedColor.getIndex());
-    std::string id = buffer;
+    // Todo (modernize, cpp20): use std::format or fmtlibs fmt::format
+    std::array<char, 64> buffer{'\0'};
+    auto size = snprintf(buffer.data(), buffer.size(), "COLOR(%zu)", this->namedColor.getIndex());
+    std::string id = {buffer.data(), static_cast<size_t>(size)};
 
     return id;
 }
@@ -119,7 +122,7 @@ void ColorToolItem::enable(bool enabled) {
     }
 }
 
-void ColorToolItem::activated(GdkEvent* event, GtkMenuItem* menuitem, GtkToolButton* toolbutton) {
+void ColorToolItem::activated(GtkMenuItem* menuitem, GtkToolButton* toolbutton) {
     if (inUpdate) {
         return;
     }
@@ -135,7 +138,7 @@ void ColorToolItem::activated(GdkEvent* event, GtkMenuItem* menuitem, GtkToolBut
 }
 
 auto ColorToolItem::newItem() -> GtkToolItem* {
-    this->icon = new ColorSelectImage(this->namedColor.getColor(), !isSelector());
+    this->icon = std::make_unique<ColorSelectImage>(this->namedColor.getColor(), !isSelector());
 
     GtkToolItem* it = gtk_toggle_tool_button_new();
 

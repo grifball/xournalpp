@@ -1,23 +1,25 @@
 #include "util/NamedColor.h"
 
-#include <cstdint>
-#include <sstream>
+#include <cstdint>    // for uint16_t, uint8_t
+#include <sstream>    // for istringstream, basic_istream, basic_i...
+#include <stdexcept>  // for invalid_argument
+#include <utility>    // for move
 
-#include "util/StringUtils.h"
-#include "util/serdesstream.h"
+#include "util/StringUtils.h"   // for StringUtils
+#include "util/serdesstream.h"  // for serdes_stream
 
 
 NamedColor::NamedColor():
         paletteIndex{0}, name{"Custom Color"}, colorU16{ColorU16{}}, color{Color(0u)}, isPaletteColor{false} {}
 
-NamedColor::NamedColor(const size_t& paletteIndex):
+NamedColor::NamedColor(size_t paletteIndex):
         paletteIndex{paletteIndex},
         name{"Fallback Color"},
         colorU16{ColorU16{}},
         color{Color(0u)},
         isPaletteColor{true} {}
 
-NamedColor::NamedColor(const Color& color):
+NamedColor::NamedColor(Color color):
         paletteIndex{0},
         name{"Custom Color"},
         colorU16(Util::argb_to_ColorU16(color)),
@@ -59,4 +61,4 @@ auto NamedColor::getColor() const -> Color { return color; }
 
 auto NamedColor::getIndex() const -> size_t { return paletteIndex; };
 
-auto NamedColor::getName() const -> std::string { return name; };
+auto NamedColor::getName() const -> std::string const& { return name; };

@@ -11,15 +11,21 @@
 
 #pragma once
 
-#include "BaseStrokeHandler.h"
+#include <vector>
 
-class RulerHandler: public BaseStrokeHandler {
+#include "model/PageRef.h"  // for PageRef
+
+#include "BaseShapeHandler.h"  // for BaseShapeHandler
+
+class Point;
+class Control;
+
+class RulerHandler: public BaseShapeHandler {
 public:
-    RulerHandler(XournalView* xournal, XojPageView* redrawable, const PageRef& page);
-    virtual ~RulerHandler();
+    RulerHandler(Control* control, const PageRef& page);
+    ~RulerHandler() override;
 
 private:
-    virtual void drawShape(Point& currentPoint, const PositionInputData& pos);
-
-private:
+    auto createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
+            -> std::pair<std::vector<Point>, Range> override;
 };

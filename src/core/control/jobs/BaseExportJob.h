@@ -11,13 +11,12 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "util/PathUtil.h"
+#include <gtk/gtk.h>  // for GtkWidget
 
-#include "BlockingJob.h"
-#include "filesystem.h"
+#include "BlockingJob.h"  // for BlockingJob
+#include "filesystem.h"   // for path
 
 /**
  *  @brief List of types for the export of background components.
@@ -33,10 +32,10 @@ public:
     BaseExportJob(Control* control, const std::string& name);
 
 protected:
-    virtual ~BaseExportJob();
+    ~BaseExportJob() override;
 
 public:
-    virtual void afterRun();
+    void afterRun() override;
 
 public:
     virtual bool showFilechooser();

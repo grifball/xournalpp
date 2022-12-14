@@ -1,9 +1,16 @@
 #include "StrokeStabilizer.h"
 
-#include <numeric>
+#include <algorithm>  // for min
+#include <cfloat>
+#include <iterator>  // for begin, end
+#include <list>      // for list, operator!=
+#include <numeric>   // for accumulate
+#include <vector>    // for vector
 
-#include "control/settings/Settings.h"
-#include "model/SplineSegment.h"
+#include "control/settings/Settings.h"           // for Settings
+#include "control/tools/StrokeStabilizerEnum.h"  // for Preprocessor, Averag...
+#include "model/SplineSegment.h"                 // for SplineSegment
+#include "model/Stroke.h"                        // for Stroke
 
 /**
  * StrokeStabilizer::get
@@ -106,6 +113,15 @@ void StrokeStabilizer::Active::quadraticSplineTo(const Event& ev) {
     const double normBC = std::sqrt(squaredNormBC);
     const double normAB = vAB.norm();
 
+    if (normBC < DBL_EPSILON) {
+        return;
+    }
+    if (normAB < DBL_EPSILON) {
+        g_warning("Last two points of stroke coincide. ");
+        drawEvent(ev);
+        return;
+    }
+
     /**
      * The first argument of std::min would give a symmetric quadratic spline segment.
      * The std::min and its second argument ensure the spline segment stays reasonably close to its nodes
@@ -118,16 +134,13 @@ void StrokeStabilizer::Active::quadraticSplineTo(const Event& ev) {
     /**
      * The quadratic control point is converted into two cubic control points
      */
-    // Equivalent to fp = B.lineTo(Q, 2/3*distance), but avoids recomputing the norms
-    Point fp((Q.x - B.x) * 2 / 3 + B.x, (Q.y - B.y) * 2 / 3 + B.y);
-    // Equivalent to sp = C.lineTo(Q, 2/3*distance), but avoids recomputing the norms
-    Point sp((Q.x - C.x) * 2 / 3 + C.x, (Q.y - C.y) * 2 / 3 + C.y);
+    Point fp = B.relativeLineTo(Q, 2.0 / 3.0);
+    Point sp = C.relativeLineTo(Q, 2.0 / 3.0);
 
     /**
-     * Set the pressure values. We assume the tool is pressure sensitive:
-     *      stroke->getToolType() == STROKE_TOOL_PEN
+     * Set the pressure values. Only the usual pen strokes are pressure sensitive
      */
-    bool usePressure = ev.pressure != Point::NO_PRESSURE;
+    bool usePressure = ev.pressure != Point::NO_PRESSURE && stroke->getToolType().isPressureSensitive();
     if (usePressure) {
         C.z = ev.pressure * stroke->getWidth();
         double coeff = normBC / 2 + distance;  // Very rough estimation of the spline's length

@@ -1,15 +1,27 @@
 #include "SidebarPreviewPages.h"
 
-#include <memory>
+#include <algorithm>  // for max
+#include <map>        // for map
+#include <memory>     // for uniqu...
+#include <utility>    // for pair
 
-#include "control/Control.h"
-#include "control/PdfCache.h"
-#include "gui/sidebar/previews/base/SidebarToolbar.h"
-#include "undo/CopyUndoAction.h"
-#include "undo/SwapUndoAction.h"
-#include "util/i18n.h"
+#include <glib-object.h>  // for g_obj...
 
-#include "SidebarPreviewPageEntry.h"
+#include "control/Control.h"                                    // for Control
+#include "control/ScrollHandler.h"                              // for Scrol...
+#include "gui/GladeGui.h"                                       // for GladeGui
+#include "gui/sidebar/previews/base/SidebarPreviewBaseEntry.h"  // for Sideb...
+#include "gui/sidebar/previews/base/SidebarToolbar.h"           // for Sideb...
+#include "model/Document.h"                                     // for Document
+#include "model/PageRef.h"                                      // for PageRef
+#include "model/XojPage.h"                                      // for XojPage
+#include "undo/CopyUndoAction.h"                                // for CopyU...
+#include "undo/SwapUndoAction.h"                                // for SwapU...
+#include "undo/UndoRedoHandler.h"                               // for UndoR...
+#include "util/Util.h"                                          // for npos
+#include "util/i18n.h"                                          // for _
+
+#include "SidebarPreviewPageEntry.h"  // for Sideb...
 
 SidebarPreviewPages::SidebarPreviewPages(Control* control, GladeGui* gui, SidebarToolbar* toolbar):
         SidebarPreviewBase(control, gui, toolbar),
@@ -144,26 +156,7 @@ void SidebarPreviewPages::actionPerformed(SidebarActions action) {
             break;
         }
         case SIDEBAR_ACTION_COPY: {
-            Document* doc = control->getDocument();
-            PageRef currentPage = control->getCurrentPage();
-            if (!currentPage) {
-                return;
-            }
-
-            doc->lock();
-            size_t page = doc->indexOf(currentPage);
-
-            auto newPage = PageRef(currentPage->clone());
-            doc->insertPage(newPage, page + 1);
-            doc->unlock();
-
-            UndoRedoHandler* undo = control->getUndoRedoHandler();
-            undo->addUndoAction(std::make_unique<CopyUndoAction>(newPage, page + 1));
-
-            control->firePageInserted(page + 1);
-            control->firePageSelected(page + 1);
-
-            control->getScrollHandler()->scrollToPage(page + 1);
+            control->duplicatePage();
             break;
         }
         case SIDEBAR_ACTION_DELETE:
@@ -183,13 +176,12 @@ void SidebarPreviewPages::actionPerformed(SidebarActions action) {
 }
 
 void SidebarPreviewPages::updatePreviews() {
-    Document* doc = this->getControl()->getDocument();
-    doc->lock();
-    size_t len = doc->getPageCount();
-
     for (SidebarPreviewBaseEntry* p: this->previews) { delete p; }
     this->previews.clear();
 
+    Document* doc = this->getControl()->getDocument();
+    doc->lock();
+    size_t len = doc->getPageCount();
     for (size_t i = 0; i < len; i++) {
         auto page = doc->getPage(i);
         SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, page);

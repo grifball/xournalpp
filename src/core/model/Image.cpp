@@ -1,10 +1,20 @@
 #include "Image.h"
 
-#include <utility>
+#include <algorithm>  // for min
+#include <array>      // for array
+#include <utility>    // for move, pair
 
-#include "util/pixbuf-utils.h"
-#include "util/serializing/ObjectInputStream.h"
-#include "util/serializing/ObjectOutputStream.h"
+#include <cairo.h>        // for cairo_surface_destroy
+#include <gdk/gdk.h>      // for gdk_cairo_set_sourc...
+#include <glib-object.h>  // for g_object_unref
+#include <glib.h>         // for g_assert, guchar
+
+#include "model/Element.h"                        // for Element, ELEMENT_IMAGE
+#include "util/Rectangle.h"                       // for Rectangle
+#include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
+#include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
+
+using xoj::util::Rectangle;
 
 Image::Image(): Element(ELEMENT_IMAGE) {}
 
@@ -13,9 +23,14 @@ Image::~Image() {
         cairo_surface_destroy(this->image);
         this->image = nullptr;
     }
+
+    if (this->format) {
+        gdk_pixbuf_format_free(this->format);
+        this->format = nullptr;
+    }
 }
 
-auto Image::clone() -> Element* {
+auto Image::clone() const -> Element* {
     auto* img = new Image();
 
     img->x = this->x;
@@ -28,7 +43,6 @@ auto Image::clone() -> Element* {
     img->image = cairo_surface_reference(this->image);
     img->snappedBounds = this->snappedBounds;
     img->sizeCalculated = this->sizeCalculated;
-    img->read = this->read;
 
     return img;
 }
@@ -43,27 +57,55 @@ void Image::setHeight(double height) {
     this->calcSize();
 }
 
-auto Image::cairoReadFunction(const Image* image, unsigned char* data, unsigned int length) -> cairo_status_t {
-    for (unsigned int i = 0; i < length; i++, image->read++) {
-        if (image->read >= image->data.length()) {
-            return CAIRO_STATUS_READ_ERROR;
-        }
+void Image::setImage(std::string_view data) { setImage(std::string(data)); }
 
-        data[i] = image->data[image->read];
-    }
-
-    return CAIRO_STATUS_SUCCESS;
-}
-
-void Image::setImage(std::string data) {
+void Image::setImage(std::string&& data) {
     if (this->image) {
         cairo_surface_destroy(this->image);
         this->image = nullptr;
     }
     this->data = std::move(data);
+
+    if (this->format) {
+        gdk_pixbuf_format_free(this->format);
+        this->format = nullptr;
+    }
+
+    // FIXME: awful hack to try to parse the format
+    std::array<char*, 4096> buffer{};
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+    size_t remaining = this->data.size();
+    while (remaining > 0) {
+        size_t readLen = std::min(remaining, buffer.size());
+        if (!gdk_pixbuf_loader_write(loader, reinterpret_cast<const guchar*>(this->data.c_str()), readLen, nullptr))
+            break;
+        remaining -= readLen;
+
+        // Try to determine the format early, if possible
+        this->format = gdk_pixbuf_loader_get_format(loader);
+        if (this->format) {
+            break;
+        }
+    }
+    gdk_pixbuf_loader_close(loader, nullptr);
+    // if the format was not determined early, it can probably be determined now
+    if (!this->format) {
+        this->format = gdk_pixbuf_loader_get_format(loader);
+    }
+    g_assert(this->format != nullptr && "could not parse the image format!");
+
+    // the format is owned by the pixbuf, so create a copy
+    this->format = gdk_pixbuf_format_copy(this->format);
+
+    g_object_unref(loader);
 }
 
-void Image::setImage(GdkPixbuf* img) { setImage(f_pixbuf_to_cairo_surface(img)); }
+void Image::setImage(GdkPixbuf* img) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    setImage(gdk_cairo_surface_create_from_pixbuf(img, 0, nullptr));
+#pragma GCC diagnostic pop
+}
 
 void Image::setImage(cairo_surface_t* image) {
     if (this->image) {
@@ -71,14 +113,48 @@ void Image::setImage(cairo_surface_t* image) {
         this->image = nullptr;
     }
 
-    this->image = image;
+    struct {
+        std::string buffer;
+        std::string readbuf;
+    } closure_;
+    const cairo_write_func_t writeFunc = [](void* closurePtr, const unsigned char* data,
+                                            unsigned int length) -> cairo_status_t {
+        auto& closure = *reinterpret_cast<decltype(&closure_)>(closurePtr);
+        closure.buffer.append(reinterpret_cast<const char*>(data), length);
+        return CAIRO_STATUS_SUCCESS;
+    };
+    cairo_surface_write_to_png_stream(image, writeFunc, &closure_);
+
+    data = std::move(closure_.buffer);
 }
 
 auto Image::getImage() const -> cairo_surface_t* {
-    if (this->image == nullptr && this->data.length()) {
-        this->read = 0;
-        this->image = cairo_image_surface_create_from_png_stream(
-                reinterpret_cast<cairo_read_func_t>(&cairoReadFunction), const_cast<Image*>(this));
+    g_assert(data.length() > 0 && "image has no data, cannot render it!");
+    if (this->image == nullptr) {
+        GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+        gdk_pixbuf_loader_write(loader, reinterpret_cast<const guchar*>(this->data.c_str()), this->data.length(),
+                                nullptr);
+        bool success = gdk_pixbuf_loader_close(loader, nullptr);
+        g_assert(success && "errors in loading image data!");
+
+        GdkPixbuf* pixbuf = gdk_pixbuf_loader_get_pixbuf(loader);
+        g_assert(pixbuf != nullptr);
+        this->imageSize = {gdk_pixbuf_get_width(pixbuf), gdk_pixbuf_get_height(pixbuf)};
+
+        // TODO: pass in window once this code is refactored into ImageView
+        this->image = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, gdk_pixbuf_get_width(pixbuf),
+                                                 gdk_pixbuf_get_height(pixbuf));
+        g_assert(this->image != nullptr);
+
+        // Paint the pixbuf on to the surface
+        // NOTE: we do this manually instead of using gdk_cairo_surface_create_from_pixbuf
+        // since this does not work in CLI mode.
+        cairo_t* cr = cairo_create(this->image);
+        gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+        cairo_paint(cr);
+        cairo_destroy(cr);
+
+        g_object_unref(loader);
     }
 
     return this->image;
@@ -108,7 +184,7 @@ void Image::serialize(ObjectOutputStream& out) const {
     out.writeDouble(this->width);
     out.writeDouble(this->height);
 
-    out.writeImage(this->image);
+    out.writeImage(this->data);
 
     out.endObject();
 }
@@ -126,7 +202,7 @@ void Image::readSerialized(ObjectInputStream& in) {
         this->image = nullptr;
     }
 
-    this->image = in.readImage();
+    this->data = in.readImage();
 
     in.endObject();
     this->calcSize();
@@ -136,3 +212,13 @@ void Image::calcSize() const {
     this->snappedBounds = Rectangle<double>(this->x, this->y, this->width, this->height);
     this->sizeCalculated = true;
 }
+
+bool Image::hasData() const { return !this->data.empty(); }
+
+const unsigned char* Image::getRawData() const { return reinterpret_cast<const unsigned char*>(this->data.data()); }
+
+size_t Image::getRawDataLength() const { return this->data.size(); }
+
+std::pair<int, int> Image::getImageSize() const { return this->imageSize; }
+
+GdkPixbufFormat* Image::getImageFormat() const { return this->format; }

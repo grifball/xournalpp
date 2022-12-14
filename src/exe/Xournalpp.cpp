@@ -9,13 +9,16 @@
  * @license GNU GPLv2
  */
 
-#include "control/CrashHandler.h"
-#include "control/XournalMain.h"
-#include "util/logger/Logger.h"
+#include "control/CrashHandler.h"  // for installCrashHandlers
+#include "control/XournalMain.h"   // for run
 
-#include "filesystem.h"
+#ifdef __APPLE__
+#include "osx/setup-env.h"
+#endif
 
 #ifdef _WIN32
+#include <cstdlib>
+
 #include "win32/console.h"
 #endif
 
@@ -35,6 +38,11 @@ auto main(int argc, char* argv[]) -> int {
 #ifdef _WIN32
     // Switch to the FontConfig backend for Pango - See #3371
     _putenv_s("PANGOCAIRO_BACKEND", "fc");
+#endif
+
+#ifdef __APPLE__
+    // Setup the environment variables, in particular so that the pixbuf loaders are found
+    setupEnvironment();
 #endif
 
     // Use this two line to test the crash handler...

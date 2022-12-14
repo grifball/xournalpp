@@ -11,19 +11,25 @@
 
 #pragma once
 
-#include <gtk/gtk.h>
+#include <string>  // for string
+#include <vector>  // for vector
 
-#include "pdf/base/XojPdfPage.h"
+#include <pango/pangocairo.h>  // for PangoLayout, cairo_t
+
+#include "View.h"  // for ElementView
 
 class Text;
+class XojPdfRectangle;
 
-class TextView {
-private:
-    TextView();
+class xoj::view::TextView: public xoj::view::ElementView {
+public:
+    TextView(const Text* t);
     virtual ~TextView();
 
-public:
-    static void setDpi(int dpi);
+    /**
+     * Draws a Text model to a cairo surface
+     */
+    void draw(const Context& ctx) const override;
 
     /**
      * Calculates the size of a Text model
@@ -31,14 +37,9 @@ public:
     static void calcSize(const Text* t, double& width, double& height);
 
     /**
-     * Draws a Text model to a cairo surface
+     * Searches text within a Text model
      */
-    static void drawText(cairo_t* cr, const Text* t);
-
-    /**
-     * Searches text within a Text model, returns XojPopplerRectangle, have to been freed
-     */
-    static std::vector<XojPdfRectangle> findText(const Text* t, std::string& search);
+    static std::vector<XojPdfRectangle> findText(const Text* t, const std::string& search);
 
     /**
      * Initialize a Pango layout
@@ -49,4 +50,7 @@ public:
      * Sets the font name from Text model
      */
     static void updatePangoFont(PangoLayout* layout, const Text* t);
+
+private:
+    const Text* text;
 };

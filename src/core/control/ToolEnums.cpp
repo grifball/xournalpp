@@ -52,6 +52,8 @@ auto drawingTypeToString(DrawingType type) -> std::string {
             return "ellipse";
         case DRAWING_TYPE_ARROW:
             return "arrow";
+        case DRAWING_TYPE_DOUBLE_ARROW:
+            return "doubleArrow";
         case DRAWING_TYPE_STROKE_RECOGNIZER:
             return "strokeRecognizer";
         case DRAWING_TYPE_COORDINATE_SYSTEM:
@@ -79,6 +81,9 @@ auto drawingTypeFromString(const std::string& type) -> DrawingType {
     if (type == "arrow") {
         return DRAWING_TYPE_ARROW;
     }
+    if (type == "doubleArrow") {
+        return DRAWING_TYPE_DOUBLE_ARROW;
+    }
     if (type == "strokeRecognizer") {
         return DRAWING_TYPE_STROKE_RECOGNIZER;
     }
@@ -89,6 +94,12 @@ auto drawingTypeFromString(const std::string& type) -> DrawingType {
         return DRAWING_TYPE_SPLINE;
     }
     return DRAWING_TYPE_DEFAULT;
+}
+
+auto isSelectToolType(ToolType type) -> bool {
+    return type == TOOL_SELECT_RECT
+            || type == TOOL_SELECT_REGION
+            || type == TOOL_SELECT_OBJECT;
 }
 
 auto toolTypeToString(ToolType type) -> std::string {
@@ -123,12 +134,18 @@ auto toolTypeToString(ToolType type) -> std::string {
             return "drawEllipse";
         case TOOL_DRAW_ARROW:
             return "drawArrow";
+        case TOOL_DRAW_DOUBLE_ARROW:
+            return "drawDoubleArrow";
         case TOOL_DRAW_COORDINATE_SYSTEM:
             return "drawCoordinateSystem";
         case TOOL_DRAW_SPLINE:
             return "drawSpline";
         case TOOL_FLOATING_TOOLBOX:
             return "showFloatingToolbox";
+        case TOOL_SELECT_PDF_TEXT_LINEAR:
+            return "selectPdfTextLinear";
+        case TOOL_SELECT_PDF_TEXT_RECT:
+            return "selectPdfTextRect";
         default:
             return "";
     }
@@ -179,6 +196,9 @@ auto toolTypeFromString(const std::string& type) -> ToolType {
     if (type == "drawArrow") {
         return TOOL_DRAW_ARROW;
     }
+    if (type == "drawDoubleArrow") {
+        return TOOL_DRAW_DOUBLE_ARROW;
+    }
     if (type == "drawCoordinateSystem") {
         return TOOL_DRAW_COORDINATE_SYSTEM;
     }
@@ -187,6 +207,12 @@ auto toolTypeFromString(const std::string& type) -> ToolType {
     }
     if (type == "showFloatingToolbox") {
         return TOOL_FLOATING_TOOLBOX;
+    }
+    if (type == "selectPdfTextLinear") {
+        return TOOL_SELECT_PDF_TEXT_LINEAR;
+    }
+    if (type == "selectPdfTextRect") {
+        return TOOL_SELECT_PDF_TEXT_RECT;
     }
     return TOOL_NONE;
 }

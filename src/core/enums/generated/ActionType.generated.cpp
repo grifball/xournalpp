@@ -4,7 +4,8 @@
 
 #include <string>
 
-#include "enums/ActionType.enum.h"
+#include "../ActionType.enum.h"
+
 using std::string;
 #include <glib.h>
 
@@ -79,6 +80,10 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_SEARCH;
     }
 
+    if (value == "ACTION_SELECT_ALL") {
+        return ACTION_SELECT_ALL;
+    }
+
     if (value == "ACTION_DELETE") {
         return ACTION_DELETE;
     }
@@ -147,6 +152,10 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_NEW_PAGE_BEFORE;
     }
 
+    if (value == "ACTION_DUPLICATE_PAGE") {
+        return ACTION_DUPLICATE_PAGE;
+    }
+
     if (value == "ACTION_NEW_PAGE_AFTER") {
         return ACTION_NEW_PAGE_AFTER;
     }
@@ -175,8 +184,20 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_DELETE_LAYER;
     }
 
+    if (value == "ACTION_MERGE_LAYER_DOWN") {
+        return ACTION_MERGE_LAYER_DOWN;
+    }
+
     if (value == "ACTION_RENAME_LAYER") {
         return ACTION_RENAME_LAYER;
+    }
+
+    if (value == "ACTION_MOVE_SELECTION_LAYER_UP") {
+        return ACTION_MOVE_SELECTION_LAYER_UP;
+    }
+
+    if (value == "ACTION_MOVE_SELECTION_LAYER_DOWN") {
+        return ACTION_MOVE_SELECTION_LAYER_DOWN;
     }
 
     if (value == "ACTION_PAPER_FORMAT") {
@@ -251,8 +272,20 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_TOOL_DRAW_ARROW;
     }
 
+    if (value == "ACTION_TOOL_DRAW_DOUBLE_ARROW") {
+        return ACTION_TOOL_DRAW_DOUBLE_ARROW;
+    }
+
     if (value == "ACTION_TOOL_DRAW_COORDINATE_SYSTEM") {
         return ACTION_TOOL_DRAW_COORDINATE_SYSTEM;
+    }
+
+    if (value == "ACTION_TOOL_SELECT_PDF_TEXT_LINEAR") {
+        return ACTION_TOOL_SELECT_PDF_TEXT_LINEAR;
+    }
+
+    if (value == "ACTION_TOOL_SELECT_PDF_TEXT_RECT") {
+        return ACTION_TOOL_SELECT_PDF_TEXT_RECT;
     }
 
     if (value == "ACTION_RULER") {
@@ -403,6 +436,14 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_GRID_SNAPPING;
     }
 
+    if (value == "ACTION_HIGHLIGHT_POSITION") {
+        return ACTION_HIGHLIGHT_POSITION;
+    }
+
+    if (value == "ACTION_SETSQUARE") {
+        return ACTION_SETSQUARE;
+    }
+
     if (value == "ACTION_SELECT_COLOR") {
         return ACTION_SELECT_COLOR;
     }
@@ -481,6 +522,10 @@ auto ActionType_fromString(const string& value) -> ActionType {
 
     if (value == "ACTION_SET_PAIRS_OFFSET") {
         return ACTION_SET_PAIRS_OFFSET;
+    }
+
+    if (value == "ACTION_TOGGLE_PAIRS_PARITY") {
+        return ACTION_TOGGLE_PAIRS_PARITY;
     }
 
     if (value == "ACTION_SET_COLUMNS") {
@@ -677,6 +722,10 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_SEARCH";
     }
 
+    if (value == ACTION_SELECT_ALL) {
+        return "ACTION_SELECT_ALL";
+    }
+
     if (value == ACTION_DELETE) {
         return "ACTION_DELETE";
     }
@@ -745,6 +794,10 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_NEW_PAGE_BEFORE";
     }
 
+    if (value == ACTION_DUPLICATE_PAGE) {
+        return "ACTION_DUPLICATE_PAGE";
+    }
+
     if (value == ACTION_NEW_PAGE_AFTER) {
         return "ACTION_NEW_PAGE_AFTER";
     }
@@ -773,8 +826,20 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_DELETE_LAYER";
     }
 
+    if (value == ACTION_MERGE_LAYER_DOWN) {
+        return "ACTION_MERGE_LAYER_DOWN";
+    }
+
     if (value == ACTION_RENAME_LAYER) {
         return "ACTION_RENAME_LAYER";
+    }
+
+    if (value == ACTION_MOVE_SELECTION_LAYER_UP) {
+        return "ACTION_MOVE_SELECTION_LAYER_UP";
+    }
+
+    if (value == ACTION_MOVE_SELECTION_LAYER_DOWN) {
+        return "ACTION_MOVE_SELECTION_LAYER_DOWN";
     }
 
     if (value == ACTION_PAPER_FORMAT) {
@@ -849,8 +914,20 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_TOOL_DRAW_ARROW";
     }
 
+    if (value == ACTION_TOOL_DRAW_DOUBLE_ARROW) {
+        return "ACTION_TOOL_DRAW_DOUBLE_ARROW";
+    }
+
     if (value == ACTION_TOOL_DRAW_COORDINATE_SYSTEM) {
         return "ACTION_TOOL_DRAW_COORDINATE_SYSTEM";
+    }
+
+    if (value == ACTION_TOOL_SELECT_PDF_TEXT_LINEAR) {
+        return "ACTION_TOOL_SELECT_PDF_TEXT_LINEAR";
+    }
+
+    if (value == ACTION_TOOL_SELECT_PDF_TEXT_RECT) {
+        return "ACTION_TOOL_SELECT_PDF_TEXT_RECT";
     }
 
     if (value == ACTION_RULER) {
@@ -1001,6 +1078,14 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_GRID_SNAPPING";
     }
 
+    if (value == ACTION_HIGHLIGHT_POSITION) {
+        return "ACTION_HIGHLIGHT_POSITION";
+    }
+
+    if (value == ACTION_SETSQUARE) {
+        return "ACTION_SETSQUARE";
+    }
+
     if (value == ACTION_SELECT_COLOR) {
         return "ACTION_SELECT_COLOR";
     }
@@ -1079,6 +1164,10 @@ auto ActionType_toString(ActionType value) -> string {
 
     if (value == ACTION_SET_PAIRS_OFFSET) {
         return "ACTION_SET_PAIRS_OFFSET";
+    }
+
+    if (value == ACTION_TOGGLE_PAIRS_PARITY) {
+        return "ACTION_TOGGLE_PAIRS_PARITY";
     }
 
     if (value == ACTION_SET_COLUMNS) {

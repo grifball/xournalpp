@@ -11,30 +11,31 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string>  // for string
 
-#include "UndoAction.h"
+#include "model/Layer.h"    // for Layer, Layer::Index
+#include "model/PageRef.h"  // for PageRef
 
+#include "UndoAction.h"  // for UndoAction
 
-class Layer;
 class LayerController;
+class Control;
 
 class MoveLayerUndoAction: public UndoAction {
 public:
-    MoveLayerUndoAction(LayerController* layerController, const PageRef& page, Layer* layer, int oldLayerPos,
-                        int newLayerPos);
-    virtual ~MoveLayerUndoAction();
+    MoveLayerUndoAction(LayerController* layerController, const PageRef& page, Layer* layer, Layer::Index oldLayerPos,
+                        Layer::Index newLayerPos);
+    ~MoveLayerUndoAction() override;
 
 public:
-    virtual bool undo(Control* control);
-    virtual bool redo(Control* control);
+    bool undo(Control* control) override;
+    bool redo(Control* control) override;
 
-    virtual std::string getText();
+    std::string getText() override;
 
 private:
-    int oldLayerPos;
-    int newLayerPos;
+    Layer::Index oldLayerPos;
+    Layer::Index newLayerPos;
     LayerController* layerController;
     Layer* layer;
 };

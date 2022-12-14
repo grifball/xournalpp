@@ -11,15 +11,15 @@
 
 #pragma once
 
-#include <cstdint>
+#include <cairo.h>  // for cairo_t, CAIRO_LINE_CAP_BUTT, CAIRO_LINE_CAP_ROUND
 
-#include <gtk/gtk.h>
+#include "View.h"  // for ElementView
 
 class Stroke;
 
-class StrokeView {
+class xoj::view::StrokeView: public xoj::view::ElementView {
 public:
-    StrokeView(cairo_t* cr, Stroke* s);
+    StrokeView(const Stroke* s);
     ~StrokeView() = default;
 
 public:
@@ -30,30 +30,16 @@ public:
      * @param markAudioStroke If true, the stroke is faded out if it has no audio playback attached.
      * @param noColor If true, paint as if on a colorblind mask (only the alpha values are painted).
      */
-    void paint(bool dontRenderEditingStroke, bool markAudioStroke, bool noColor = false) const;
+    void draw(const Context& ctx) const override;
 
 private:
-    inline void pathToCairo() const;
-    static void drawErasableStroke(cairo_t* cr, Stroke* s);
-
-    /**
-     * No pressure sensitivity, one line is drawn
-     */
-    void drawNoPressure() const;
-
-    /**
-     * Draw a stroke with pressure, for this multiple
-     * lines with different widths needs to be drawn
-     */
-    void drawWithPressure() const;
-
-
-private:
-    cairo_t* cr;
-    mutable cairo_t* crEffective;
-    Stroke* s;
+    const Stroke* s;
 
 public:
-    static constexpr uint8_t HIGHLIGHTER_ALPHA = 120;
-    static constexpr double MINIMAL_ALPHA = 10;
+    static constexpr double OPACITY_HIGHLIGHTER = 0.47;
+    static constexpr double MINIMAL_ALPHA = 0.04;
+
+    //  Must match the enum StrokeCapStyle in Stroke.h
+    static constexpr cairo_line_cap_t CAIRO_LINE_CAP[] = {CAIRO_LINE_CAP_ROUND, CAIRO_LINE_CAP_BUTT,
+                                                          CAIRO_LINE_CAP_SQUARE};
 };

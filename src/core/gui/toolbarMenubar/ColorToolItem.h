@@ -11,30 +11,43 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <memory>  // for unique_ptr
+#include <string>  // for string
 
-#include "control/ToolHandler.h"
+#include <gdk-pixbuf/gdk-pixbuf.h>  // for GdkPixbuf
+#include <gdk/gdk.h>                // for GdkEvent
+#include <gtk/gtk.h>                // for GtkWindow, GtkMenuItem, GtkToolB...
 
-#include "AbstractToolItem.h"
+#include "enums/ActionGroup.enum.h"  // for ActionGroup
+#include "enums/ActionType.enum.h"   // for ActionType
+#include "util/Color.h"              // for Color
+#include "util/NamedColor.h"         // for NamedColor
 
+#include "AbstractToolItem.h"  // for AbstractToolItem
 
 class ColorSelectImage;
+class ToolHandler;
+class ActionHandler;
 
 class ColorToolItem: public AbstractToolItem {
 public:
     ColorToolItem(ActionHandler* handler, ToolHandler* toolHandler, GtkWindow* parent, NamedColor namedColor,
                   bool selektor = false);
-    virtual ~ColorToolItem();
+    ColorToolItem(ColorToolItem const&) = delete;
+    ColorToolItem(ColorToolItem&&) noexcept = delete;
+    auto operator=(ColorToolItem const&) -> ColorToolItem& = delete;
+    auto operator=(ColorToolItem&&) noexcept -> ColorToolItem& = delete;
+    ~ColorToolItem() override;
+
 
 public:
-    virtual void actionSelected(ActionGroup group, ActionType action);
+    void actionSelected(ActionGroup group, ActionType action) override;
     void enableColor(Color color);
-    virtual void activated(GdkEvent* event, GtkMenuItem* menuitem, GtkToolButton* toolbutton);
+    void activated(GtkMenuItem* menuitem, GtkToolButton* toolbutton) override;
 
-    virtual std::string getToolDisplayName() const;
-    virtual GtkWidget* getNewToolIcon() const;
-    virtual GdkPixbuf* getNewToolPixbuf() const;
+    std::string getToolDisplayName() const override;
+    GtkWidget* getNewToolIcon() const override;
+    GdkPixbuf* getNewToolPixbuf() const override;
 
     std::string getId() const final;
 
@@ -43,10 +56,10 @@ public:
     /**
      * Enable / Disable the tool item
      */
-    virtual void enable(bool enabled);
+    void enable(bool enabled) override;
 
 protected:
-    virtual GtkToolItem* newItem();
+    GtkToolItem* newItem() override;
     bool isSelector() const;
 
     /**
@@ -65,7 +78,7 @@ private:
     /**
      * Icon to display
      */
-    ColorSelectImage* icon = nullptr;
+    std::unique_ptr<ColorSelectImage> icon;
 
     GtkWindow* parent = nullptr;
     ToolHandler* toolHandler = nullptr;
