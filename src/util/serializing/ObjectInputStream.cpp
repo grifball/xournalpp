@@ -1,6 +1,6 @@
 #include "util/serializing/ObjectInputStream.h"
 
-#include <cinttypes>  // for uint32_t
+#include <cstdint>  // for uint32_t
 
 #include <glib.h>  // for g_free, g_strdup_...
 
@@ -8,6 +8,8 @@
 #include "util/i18n.h"                              // for FORMAT_STR, FS
 #include "util/serializing/InputStreamException.h"  // for InputStreamException
 #include "util/serializing/Serializable.h"          // for XML_VERSION_STR
+
+template void ObjectInputStream::readData(std::vector<double>& data);
 
 // This function requires that T is read from its binary representation to work (e.g. integer type)
 template <typename T>
@@ -40,7 +42,7 @@ auto ObjectInputStream::read(const char* data, int data_len) -> bool {
                       version.c_str(), XML_VERSION_STR);
             return false;
         }
-    } catch (InputStreamException& e) {
+    } catch (const InputStreamException& e) {
         g_warning("InputStreamException: %s", e.what());
         return false;
     }
@@ -114,7 +116,7 @@ void ObjectInputStream::readData(void** data, int* length) {
     int len = readTypeFromSStream<int>(istream);
     int width = readTypeFromSStream<int>(istream);
 
-    if (istream.str().size() < (len * width)) {
+    if (istream.str().size() < static_cast<size_t>(len * width)) {
         throw InputStreamException("End reached, but try to read data", __FILE__, __LINE__);
     }
 
@@ -126,6 +128,31 @@ void ObjectInputStream::readData(void** data, int* length) {
         *length = len;
 
         istream.read((char*)*data, len * width);
+    }
+}
+
+template <typename T>
+void ObjectInputStream::readData(std::vector<T>& data) {
+    checkType('b');
+
+    if (istream.str().size() < 2 * sizeof(int)) {
+        throw InputStreamException("End reached, but try to read data len and width", __FILE__, __LINE__);
+    }
+
+    int len = readTypeFromSStream<int>(istream);
+    int width = readTypeFromSStream<int>(istream);
+
+    if (width != sizeof(T)) {
+        throw InputStreamException("Data width mismatch requested type width", __FILE__, __LINE__);
+    }
+
+    if (istream.str().size() < static_cast<size_t>(len * width)) {
+        throw InputStreamException("End reached, but try to read data", __FILE__, __LINE__);
+    }
+
+    if (len) {
+        data.resize(len);
+        istream.read((char*)data.data(), len * width);
     }
 }
 

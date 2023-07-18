@@ -3,6 +3,7 @@
 #include <algorithm>  // for min, max, transform
 #include <cmath>      // for abs, isnan
 #include <iterator>   // for back_insert_iterator
+#include <limits>     // for numeric_limits
 #include <memory>     // for make_unique, __shar...
 
 #include <glib.h>  // for g_idle_add, g_sourc...
@@ -15,7 +16,7 @@
 #include "model/Element.h"                        // for Element, Element::I...
 #include "model/Layer.h"                          // for Layer
 #include "model/LineStyle.h"                      // for LineStyle
-#include "model/Stroke.h"                         // for Stroke, STROKE_TOOL...
+#include "model/Stroke.h"                         // for Stroke, StrokeTool...
 #include "model/Text.h"                           // for Text
 #include "model/XojPage.h"                        // for XojPage
 #include "undo/ColorUndoAction.h"                 // for ColorUndoAction
@@ -29,6 +30,7 @@
 #include "undo/ScaleUndoAction.h"                 // for ScaleUndoAction
 #include "undo/SizeUndoAction.h"                  // for SizeUndoAction
 #include "undo/UndoRedoHandler.h"                 // for UndoRedoHandler
+#include "util/safe_casts.h"                      // for as_signed
 #include "util/serializing/ObjectInputStream.h"   // for ObjectInputStream
 #include "util/serializing/ObjectOutputStream.h"  // for ObjectOutputStream
 #include "view/ElementContainerView.h"            // for ElementContainerView
@@ -80,6 +82,15 @@ void EditSelectionContents::replaceInsertOrder(std::deque<std::pair<Element*, El
     this->insertOrder = std::move(newInsertOrder);
 }
 
+void EditSelectionContents::addMoveUndo(UndoRedoHandler* undo, double dx, double dy) {
+    undo->addUndoAction(std::make_unique<MoveUndoAction>(this->sourceLayer, this->sourcePage, &this->selected, dx, dy,
+                                                         this->sourceLayer, this->sourcePage));
+    this->lastBounds.x += dx;
+    this->lastBounds.y += dy;
+    this->lastSnappedBounds.x += dx;
+    this->lastSnappedBounds.y += dy;
+}
+
 /**
  * Returns all containing elements of this selection
  */
@@ -97,8 +108,8 @@ auto EditSelectionContents::getInsertOrder() const -> std::deque<std::pair<Eleme
  * (or nullptr if nothing is done)
  */
 auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, const double* thicknessHighlighter,
-                                    const double* thicknessEraser) -> UndoAction* {
-    auto* undo = new SizeUndoAction(this->sourcePage, this->sourceLayer);
+                                    const double* thicknessEraser) -> UndoActionPtr {
+    auto undo = std::make_unique<SizeUndoAction>(this->sourcePage, this->sourceLayer);
 
     bool found = false;
 
@@ -139,8 +150,6 @@ auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, c
         return undo;
     }
 
-
-    delete undo;
     return nullptr;
 }
 
@@ -148,8 +157,8 @@ auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, c
  * Fills the stroke, return an undo action
  * (Or nullptr if nothing done, e.g. because there is only an image)
  */
-auto EditSelectionContents::setFill(int alphaPen, int alphaHighligther) -> UndoAction* {
-    auto* undo = new FillUndoAction(this->sourcePage, this->sourceLayer);
+auto EditSelectionContents::setFill(int alphaPen, int alphaHighligther) -> UndoActionPtr {
+    auto undo = std::make_unique<FillUndoAction>(this->sourcePage, this->sourceLayer);
 
     bool found = false;
 
@@ -186,8 +195,6 @@ auto EditSelectionContents::setFill(int alphaPen, int alphaHighligther) -> UndoA
         return undo;
     }
 
-
-    delete undo;
     return nullptr;
 }
 
@@ -195,13 +202,13 @@ auto EditSelectionContents::setFill(int alphaPen, int alphaHighligther) -> UndoA
  * Sets the font of all containing text elements, return an undo action
  * (or nullptr if there are no Text elements)
  */
-auto EditSelectionContents::setFont(XojFont& font) -> UndoAction* {
-    double x1 = 0.0 / 0.0;
-    double x2 = 0.0 / 0.0;
-    double y1 = 0.0 / 0.0;
-    double y2 = 0.0 / 0.0;
+auto EditSelectionContents::setFont(XojFont& font) -> UndoActionPtr {
+    double x1 = std::numeric_limits<double>::quiet_NaN();
+    double x2 = std::numeric_limits<double>::quiet_NaN();
+    double y1 = std::numeric_limits<double>::quiet_NaN();
+    double y2 = std::numeric_limits<double>::quiet_NaN();
 
-    auto* undo = new FontUndoAction(this->sourcePage, this->sourceLayer);
+    auto undo = std::make_unique<FontUndoAction>(this->sourcePage, this->sourceLayer);
 
     for (Element* e: this->selected) {
         if (e->getType() == ELEMENT_TEXT) {
@@ -238,7 +245,7 @@ auto EditSelectionContents::setFont(XojFont& font) -> UndoAction* {
         this->sourceView->getXournal()->repaintSelection();
         return undo;
     }
-    delete undo;
+
     return nullptr;
 }
 
@@ -269,16 +276,15 @@ auto EditSelectionContents::setLineStyle(LineStyle style) -> UndoActionPtr {
         return undo;
     }
 
-
-    return {};
+    return nullptr;
 }
 
 /**
  * Set the color of all elements, return an undo action
  * (Or nullptr if nothing done, e.g. because there is only an image)
  */
-auto EditSelectionContents::setColor(Color color) -> UndoAction* {
-    auto* undo = new ColorUndoAction(this->sourcePage, this->sourceLayer);
+auto EditSelectionContents::setColor(Color color) -> UndoActionPtr {
+    auto undo = std::make_unique<ColorUndoAction>(this->sourcePage, this->sourceLayer);
 
     bool found = false;
 
@@ -299,8 +305,6 @@ auto EditSelectionContents::setColor(Color color) -> UndoAction* {
         return undo;
     }
 
-
-    delete undo;
     return nullptr;
 }
 
@@ -315,7 +319,7 @@ void EditSelectionContents::fillUndoItem(DeleteUndoAction* undo) {
     // Because the elements are already removed
     // and owned by the selection, therefore the layer
     // doesn't know the index anymore
-    int index = layer->getElements().size();
+    Element::Index index = as_signed(layer->getElements().size());
     for (Element* e: this->selected) {
         undo->addElement(layer, e, index);
     }
@@ -362,7 +366,7 @@ void EditSelectionContents::finalizeSelection(Rectangle<double> bounds, Rectangl
         fy = f;
     }
     bool scale = (bounds.width != this->originalBounds.width || bounds.height != this->originalBounds.height);
-    bool rotate = (std::abs(this->rotation) > __DBL_EPSILON__);
+    bool rotate = (std::abs(this->rotation) > std::numeric_limits<double>::epsilon());
 
     double mx = bounds.x - this->originalBounds.x;
     double my = bounds.y - this->originalBounds.y;
@@ -419,7 +423,7 @@ void EditSelectionContents::updateContent(Rectangle<double> bounds, Rectangle<do
         fy = f;
     }
 
-    bool rotate = (std::abs(this->rotation - this->lastRotation) > __DBL_EPSILON__);
+    bool rotate = (std::abs(this->rotation - this->lastRotation) > std::numeric_limits<double>::epsilon());
     bool scale = (snappedBounds.width != this->lastSnappedBounds.width ||
                   snappedBounds.height != this->lastSnappedBounds.height);
 
@@ -495,7 +499,7 @@ void EditSelectionContents::paint(cairo_t* cr, double x, double y, double rotati
         this->relativeY = y;
     }
 
-    if (std::abs(rotation) > __DBL_EPSILON__) {
+    if (std::abs(rotation) > std::numeric_limits<double>::epsilon()) {
         this->rotation = rotation;
     }
 
@@ -529,7 +533,7 @@ void EditSelectionContents::paint(cairo_t* cr, double x, double y, double rotati
     double sx = static_cast<double>(wTarget) / wImg;
     double sy = static_cast<double>(hTarget) / hImg;
 
-    if (wTarget != wImg || hTarget != hImg || std::abs(rotation) > __DBL_EPSILON__) {
+    if (wTarget != wImg || hTarget != hImg || std::abs(rotation) > std::numeric_limits<double>::epsilon()) {
         if (!this->rescaleId) {
             this->rescaleId = g_idle_add(reinterpret_cast<GSourceFunc>(repaintSelection), this);
         }

@@ -328,11 +328,11 @@ void LayerController::switchToLay(Layer::Index layerId, bool hideShow, bool clea
 
     if (hideShow) {
         for (Layer::Index i = 1; i <= p->getLayerCount(); i++) { p->setLayerVisible(i, i <= layerId); }
-    }
 
-    // Repaint page
-    control->getWindow()->getXournal()->layerChanged(selectedPage);
-    fireLayerVisibilityChanged();
+        // Repaint page
+        control->getWindow()->getXournal()->layerChanged(selectedPage);
+        fireLayerVisibilityChanged();
+    }
 }
 
 /**
@@ -412,19 +412,4 @@ std::string LayerController::getLayerNameById(Layer::Index id) const {
     page->setSelectedLayerId(previousId);
 
     return name;
-}
-
-/**
- * Make sure there is at least one layer on the page
- */
-void LayerController::ensureLayerExists(PageRef page) {
-    if (page->getSelectedLayerId() > 0) {
-        return;
-    }
-
-    // This creates a layer if none exists
-    page->getSelectedLayer();
-    page->setSelectedLayerId(1);
-
-    fireRebuildLayerMenu();
 }

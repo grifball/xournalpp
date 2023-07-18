@@ -23,18 +23,21 @@
 
 #include "control/ToolEnums.h"              // for ToolSize, ToolType
 #include "control/jobs/ProgressListener.h"  // for ProgressListener
+#include "control/settings/ViewModes.h"     // for ViewModeId
 #include "enums/ActionGroup.enum.h"         // for ActionGroup
 #include "enums/ActionType.enum.h"          // for ActionType
 #include "model/DocumentHandler.h"          // for DocumentHandler
+#include "model/DocumentListener.h"         // for DocumentListener
+#include "model/GeometryTool.h"             // for GeometryTool
 #include "model/PageRef.h"                  // for PageRef
 #include "undo/UndoRedoHandler.h"           // for UndoRedoHandler (ptr only)
 
 #include "Actions.h"           // for ActionHandler
 #include "ClipboardHandler.h"  // for ClipboardListener
-#include "RecentManager.h"     // for RecentManagerListener
 #include "ToolHandler.h"       // for ToolListener
 #include "filesystem.h"        // for path
 
+class GeometryToolController;
 class AudioController;
 class FullscreenHandler;
 class Sidebar;
@@ -61,12 +64,13 @@ class Settings;
 class TextEditor;
 class XournalScheduler;
 class ZoomControl;
+class ToolMenuHandler;
+class XojFont;
 
 class Control:
         public ActionHandler,
         public ToolListener,
         public DocumentHandler,
-        public RecentManagerListener,
         public UndoRedoListener,
         public ClipboardListener,
         public ProgressListener {
@@ -147,9 +151,9 @@ public:
     void selectTool(ToolType type);
     void selectDefaultTool();
 
-    void updatePageNumbers(size_t page, size_t pdfPage);
+    void setFontSelected(const XojFont& font);
 
-    void fileOpened(fs::path const& path) override;
+    void updatePageNumbers(size_t page, size_t pdfPage);
 
     /**
      * Save current state (selected tool etc.)
@@ -158,6 +162,7 @@ public:
 
     void updateWindowTitle();
     void setViewPairedPages(bool enabled);
+    void setViewFullscreenMode(bool enabled);
     void setViewPresentationMode(bool enabled);
     void setPairsOffset(int numOffset);
     void setViewColumns(int numColumns);
@@ -179,9 +184,10 @@ public:
     void changePageBackgroundColor();
     void updateBackgroundSizeButton();
 
-    void endDragDropToolbar();
-    void startDragDropToolbar();
-    bool isInDragAndDropToolbar();
+    /**
+     * Loads the view mode (hide/show menu-,tool-&sidebar)
+     */
+    bool loadViewMode(ViewModeId mode);
 
     bool isFullscreen();
 
@@ -204,9 +210,9 @@ public:
 
     void addDefaultPage(std::string pageTemplate);
     void duplicatePage();
-    void insertNewPage(size_t position);
+    void insertNewPage(size_t position, bool shouldScrollToPage = true);
     void appendNewPdfPages();
-    void insertPage(const PageRef& page, size_t position);
+    void insertPage(const PageRef& page, size_t position, bool shouldScrollToPage = true);
     void deletePage();
     void bookmarkPage();
 
@@ -238,11 +244,11 @@ public:
 
     TextEditor* getTextEditor();
 
-    GladeSearchpath* getGladeSearchPath();
+    GladeSearchpath* getGladeSearchPath() const;
 
     void disableSidebarTmp(bool disabled);
 
-    XournalScheduler* getScheduler();
+    XournalScheduler* getScheduler() const;
 
     void block(const std::string& name);
     void unblock();
@@ -252,26 +258,29 @@ public:
     void deleteLastAutosaveFile(fs::path newAutosaveFile);
     void setClipboardHandlerSelection(EditSelection* selection);
 
-    MetadataManager* getMetadataManager();
-    RecentManager* getRecentManager();
-    Settings* getSettings();
-    ToolHandler* getToolHandler();
-    ZoomControl* getZoomControl();
-    Document* getDocument();
-    UndoRedoHandler* getUndoRedoHandler();
-    MainWindow* getWindow();
+    void addChangedDocumentListener(DocumentListener* dl);
+    void removeChangedDocumentListener(DocumentListener* dl);
+
+    MetadataManager* getMetadataManager() const;
+    Settings* getSettings() const;
+    ToolHandler* getToolHandler() const;
+    ZoomControl* getZoomControl() const;
+    Document* getDocument() const;
+    UndoRedoHandler* getUndoRedoHandler() const;
+    MainWindow* getWindow() const;
     GtkWindow* getGtkWindow() const;
-    ScrollHandler* getScrollHandler();
+    ScrollHandler* getScrollHandler() const;
     PageRef getCurrentPage();
-    size_t getCurrentPageNo();
-    XournalppCursor* getCursor();
-    Sidebar* getSidebar();
-    SearchBar* getSearchBar();
-    AudioController* getAudioController();
-    PageTypeHandler* getPageTypes();
-    PageTypeMenu* getNewPageType();
-    PageBackgroundChangeController* getPageBackgroundChangeController();
-    LayerController* getLayerController();
+    size_t getCurrentPageNo() const;
+    XournalppCursor* getCursor() const;
+    Sidebar* getSidebar() const;
+    SearchBar* getSearchBar() const;
+    AudioController* getAudioController() const;
+    PageTypeHandler* getPageTypes() const;
+    PageTypeMenu* getNewPageType() const;
+    PageBackgroundChangeController* getPageBackgroundChangeController() const;
+    LayerController* getLayerController() const;
+    PluginController* getPluginController() const;
 
 
     bool copy();
@@ -309,6 +318,9 @@ public:
     void deleteSelection() override;
 
     void clipboardPaste(Element* e);
+
+public:
+    void registerPluginToolButtons(ToolMenuHandler* toolMenuHandler);
 
 protected:
     /**
@@ -350,6 +362,10 @@ protected:
     bool loadPdf(fs::path const& filepath, int scrollToPage);
 
 private:
+    template <class ToolClass, class ViewClass, class ControllerClass, class InputHandlerClass, ActionType a>
+    void makeGeometryTool();
+    void resetGeometryTool();
+
     /**
      * "Closes" the document, preparing the editor for a new document.
      */
@@ -368,7 +384,6 @@ private:
      */
     auto getLineStyleToSelect() -> std::optional<std::string> const;
 
-    RecentManager* recent = nullptr;
     UndoRedoHandler* undoRedo = nullptr;
     ZoomControl* zoom = nullptr;
 
@@ -410,6 +425,11 @@ private:
     std::vector<PageRef> changedPages;
 
     /**
+     * DocumentListener instances that are to be updated by checkChangedDocument.
+     */
+    std::list<DocumentListener*> changedDocumentListeners;
+
+    /**
      * Our clipboard abstraction
      */
     ClipboardHandler* clipboardHandler = nullptr;
@@ -441,6 +461,9 @@ private:
     PageBackgroundChangeController* pageBackgroundChangeController;
 
     LayerController* layerController;
+
+    std::unique_ptr<GeometryTool> geometryTool;
+    std::unique_ptr<GeometryToolController> geometryToolController;
 
     /**
      * Manage all Xournal++ plugins

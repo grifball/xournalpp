@@ -13,7 +13,6 @@
 
 #include <memory>  // for unique_ptr
 
-#include <cairo.h>    // for cairo_t
 #include <gdk/gdk.h>  // for GdkEventKey
 
 #include "model/OverlayBase.h"
@@ -23,6 +22,11 @@ class Control;
 class Point;
 class Stroke;
 class PositionInputData;
+
+namespace xoj::view {
+class OverlayView;
+class Repaintable;
+};  // namespace xoj::view
 
 /**
  * @brief A base class to handle pointer input
@@ -37,16 +41,6 @@ public:
     virtual ~InputHandler();
 
 public:
-    /**
-     * This method is called from the XojPageView to draw
-     * overlays displaying the drawing process.
-     * It is called from XojPageView::paintPage(cairo_t* cr, GdkRectangle* rect)
-     *
-     * @remark The coordinate system is in XojPageView coordinates, scale
-     *         it by the current zoom to change to Page coordinates
-     */
-    virtual void draw(cairo_t* cr) = 0;
-
     /**
      * This method is called from the XojPageView as soon
      * as the pointer is moved while this InputHandler
@@ -89,12 +83,9 @@ public:
      */
     virtual void onSequenceCancelEvent() = 0;
 
-    Stroke* getStroke() const;
+    virtual std::unique_ptr<xoj::view::OverlayView> createView(xoj::view::Repaintable* parent) const = 0;
 
-    /**
-     * userTapped - experimental feature to take action on filtered draw. See cbDoActionOnStrokeFilter
-     */
-    bool userTapped = false;
+    Stroke* getStroke() const;
 
 protected:
     [[nodiscard]] static std::unique_ptr<Stroke> createStroke(Control* control);

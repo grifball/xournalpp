@@ -13,6 +13,7 @@
 #include "util/Util.h"                       // for Util
 #include "util/i18n.h"                       // for FS, _F
 #include "util/raii/GLibGuards.h"            // for GErrorGuard, GStrvGuard
+#include "util/raii/GObjectSPtr.h"           // for GObjectSptr
 #include "util/safe_casts.h"                 // for as_signed
 #include "util/serdesstream.h"               // for serdes_stream
 
@@ -56,7 +57,7 @@ auto LatexGenerator::asyncRun(const fs::path& texDir, const std::string& texFile
     std::string texFilePathOSEncoding;
     try {
         texFilePathOSEncoding = (Util::getLongPath(texDir) / "tex.tex").string();
-    } catch (fs::filesystem_error const& e) {
+    } catch (const fs::filesystem_error& e) {
         GenError res{FS(_F("Failed to parse LaTeX generator path: {1}") % e.what())};
     }
 
@@ -91,12 +92,11 @@ auto LatexGenerator::asyncRun(const fs::path& texDir, const std::string& texFile
     }
 
     auto flags = static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE);
-    GSubprocessLauncher* launcher = g_subprocess_launcher_new(flags);
-    g_subprocess_launcher_set_cwd(launcher, texDir.u8string().c_str());
-    auto* proc = g_subprocess_launcher_spawnv(launcher, argv, &err);
+    xoj::util::GObjectSPtr<GSubprocessLauncher> launcher(g_subprocess_launcher_new(flags), xoj::util::adopt);
+    g_subprocess_launcher_set_cwd(launcher.get(), texDir.u8string().c_str());
+    auto* proc = g_subprocess_launcher_spawnv(launcher.get(), argv, &err);
 
     std::string progName(prog);
-    g_object_unref(launcher);
 
     if (proc) {
         return {proc};

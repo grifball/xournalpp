@@ -36,7 +36,6 @@ class RepaintHandler;
 class ScrollHandling;
 class TextEditor;
 class HandRecognition;
-class SetsquareView;
 namespace xoj::util {
 template <class T>
 class Rectangle;
@@ -78,7 +77,9 @@ public:
 
     bool actionDelete();
 
-    void endTextAllPages(XojPageView* except = nullptr);
+    void endTextAllPages(XojPageView* except = nullptr) const;
+
+    void endSplineAllPages() const;
 
     int getDisplayWidth() const;
     int getDisplayHeight() const;
@@ -92,13 +93,8 @@ public:
     void deleteSelection(EditSelection* sel = nullptr);
     void repaintSelection(bool evenWithoutSelection = false);
 
-    void setSetsquareView(std::unique_ptr<SetsquareView> setsquareView);
-    void resetSetsquareView();
-    SetsquareView* getSetsquareView() const;
-    void repaintSetsquare(bool evenWithoutSetsquare = false);
-
     TextEditor* getTextEditor() const;
-    std::vector<XojPageView*> const& getViewPages() const;
+    std::vector<std::unique_ptr<XojPageView>> const& getViewPages() const;
 
     Control* getControl() const;
     double getZoom() const;
@@ -158,8 +154,6 @@ private:
 
     void cleanupBufferCache();
 
-    static void staticLayoutPages(GtkWidget* widget, GtkAllocation* allocation, void* data);
-
 private:
     /**
      * Scrollbars
@@ -167,9 +161,8 @@ private:
     ScrollHandling* scrollHandling = nullptr;
 
     GtkWidget* widget = nullptr;
-    double margin = 75;
 
-    std::vector<XojPageView*> viewPages;
+    std::vector<std::unique_ptr<XojPageView>> viewPages;
 
     Control* control = nullptr;
 
@@ -181,7 +174,7 @@ private:
     /**
      * Handler for rerendering pages / repainting pages
      */
-    RepaintHandler* repaintHandler = nullptr;
+    std::unique_ptr<RepaintHandler> repaintHandler;
 
     /**
      * Memory cleanup timeout
@@ -191,7 +184,7 @@ private:
     /**
      * Helper class for Touch specific fixes
      */
-    HandRecognition* handRecognition = nullptr;
+    std::unique_ptr<HandRecognition> handRecognition;
 
     friend class Layout;
 };

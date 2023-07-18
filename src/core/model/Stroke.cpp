@@ -2,10 +2,10 @@
 
 #include <algorithm>  // for min, max, copy
 #include <cassert>    // for assert
-#include <cfloat>     // for DBL_MAX, DBL_MIN
-#include <cinttypes>  // for uint64_t
 #include <cmath>      // for abs, hypot, sqrt
+#include <cstdint>    // for uint64_t
 #include <iterator>   // for back_insert_iterator
+#include <limits>     // for numeric_limits
 #include <numeric>    // for accumulate
 #include <optional>   // for optional, nullopt
 #include <string>     // for to_string, operator<<
@@ -47,8 +47,7 @@ using xoj::util::Rectangle;
 #endif
 
 template <typename Float>
-constexpr void updateBounds(Float& x, Float& y, Float& width, Float& height, Rectangle<Float>& snap, Point const& p,
-                            double half_width) {
+constexpr void updateBoundingBox(Float& x, Float& y, Float& width, Float& height, Point const& p, double half_width) {
     {
         Float x2 = x + width;
         Float y2 = y + height;
@@ -60,6 +59,10 @@ constexpr void updateBounds(Float& x, Float& y, Float& width, Float& height, Rec
         width = x2 - x;
         height = y2 - y;
     }
+}
+
+template <typename Float>
+constexpr void updateSnappedBounds(Rectangle<Float>& snap, Point const& p) {
     {
         Float snapx2 = snap.x + snap.width;
         Float snapy2 = snap.y + snap.height;
@@ -240,28 +243,18 @@ auto Stroke::isInSelection(ShapeContainer* container) const -> bool {
     return true;
 }
 
-void Stroke::setFirstPoint(double x, double y) {
-    if (!this->points.empty()) {
-        Point& p = this->points.front();
-        p.x = x;
-        p.y = y;
-        this->sizeCalculated = false;
-    }
-}
-
-void Stroke::setLastPoint(double x, double y) { setLastPoint({x, y}); }
-
-void Stroke::setLastPoint(const Point& p) {
-    if (!this->points.empty()) {
-        this->points.back() = p;
-        this->sizeCalculated = false;
-    }
-}
-
 void Stroke::addPoint(const Point& p) {
     this->points.emplace_back(p);
-    updateBounds(Element::x, Element::y, Element::width, Element::height, Element::snappedBounds, p,
-                 hasPressure() ? p.z / 2.0 : this->width / 2.0);
+    if (!sizeCalculated) {
+        return;
+    }
+
+    if (hasPressure()) {
+        updateBoundsLastTwoPressures();
+    } else {
+        updateBoundingBox(Element::x, Element::y, Element::width, Element::height, p, 0.5 * this->width);
+        updateSnappedBounds(Element::snappedBounds, p);
+    }
 }
 
 auto Stroke::getPointCount() const -> int { return this->points.size(); }
@@ -270,11 +263,6 @@ auto Stroke::getPointVector() const -> std::vector<Point> const& { return points
 
 void Stroke::deletePointsFrom(size_t index) {
     points.resize(std::min(index, points.size()));
-    this->sizeCalculated = false;
-}
-
-void Stroke::deletePoint(int index) {
-    this->points.erase(std::next(begin(this->points), index));
     this->sizeCalculated = false;
 }
 
@@ -290,14 +278,9 @@ Point Stroke::getPoint(PathParameter parameter) const {
     assert(parameter.isValid() && parameter.index < this->points.size() - 1);
 
     const Point& p = this->points[parameter.index];
-    if (parameter.index == this->points.size() - 2) {
-        // Need to handle the pressure value separately, since the last pressure value of a stroke is not set.
-        Point q = this->points[parameter.index + 1];
-        q.z = p.z;
-        return p.relativeLineTo(q, parameter.t);
-    }
-    const Point& q = this->points[parameter.index + 1];
-    return p.relativeLineTo(q, parameter.t);
+    Point res = p.relativeLineTo(this->points[parameter.index + 1], parameter.t);
+    res.z = p.z;  // The point's width should be that of the segment's first point
+    return res;
 }
 
 auto Stroke::getPoints() const -> const Point* { return this->points.data(); }
@@ -355,7 +338,9 @@ void Stroke::rotate(double x0, double y0, double th) {
     cairo_matrix_rotate(&rotMatrix, th);
     cairo_matrix_translate(&rotMatrix, -x0, -y0);
 
-    for (auto&& p: points) { cairo_matrix_transform_point(&rotMatrix, &p.x, &p.y); }
+    for (auto&& p: points) {
+        cairo_matrix_transform_point(&rotMatrix, &p.x, &p.y);
+    }
     this->sizeCalculated = false;
     // Width and Height will likely be changed after this operation
 }
@@ -395,27 +380,47 @@ auto Stroke::getAvgPressure() const -> double {
            this->points.size();
 }
 
+void Stroke::updateBoundsLastTwoPressures() {
+    if (!sizeCalculated || this->points.empty()) {
+        return;
+    }
+
+    auto const pointCount = this->getPointCount();
+    assert(pointCount >= 2);
+
+    Point& p = this->points.back();
+    Point& p2 = this->points[pointCount - 2];
+    double pressure = p2.z;
+
+    updateSnappedBounds(snappedBounds, p);
+    updateBoundingBox(Element::x, Element::y, Element::width, Element::height, p, 0.5 * pressure);
+    updateBoundingBox(Element::x, Element::y, Element::width, Element::height, p2, 0.5 * pressure);
+}
+
 void Stroke::scalePressure(double factor) {
     if (!hasPressure()) {
         return;
     }
-    for (auto&& p: this->points) { p.z *= factor; }
-}
-
-void Stroke::clearPressure() {
-    for (auto&& p: points) { p.z = Point::NO_PRESSURE; }
+    for (auto&& p: this->points) {
+        p.z *= factor;
+    }
+    this->sizeCalculated = false;
 }
 
 void Stroke::setLastPressure(double pressure) {
     if (!this->points.empty()) {
-        this->points.back().z = pressure;
+        assert(pressure != Point::NO_PRESSURE);
+        Point& back = this->points.back();
+        back.z = pressure;
     }
 }
 
 void Stroke::setSecondToLastPressure(double pressure) {
     auto const pointCount = this->getPointCount();
     if (pointCount >= 2) {
-        this->points[pointCount - 2].z = pressure;
+        Point& p = this->points[pointCount - 2];
+        p.z = pressure;
+        updateBoundsLastTwoPressures();
     }
 }
 
@@ -427,7 +432,9 @@ void Stroke::setPressure(const std::vector<double>& pressure) {
     }
 
     auto max_size = std::min(pressure.size(), this->points.size() - 1);
-    for (size_t i = 0U; i != max_size; ++i) { this->points[i].z = pressure[i]; }
+    for (size_t i = 0U; i != max_size; ++i) {
+        this->points[i].z = pressure[i];
+    }
 }
 
 /**
@@ -818,14 +825,14 @@ void Stroke::calcSize() const {
         Element::snappedBounds = Rectangle<double>{};
     }
 
-    double minSnapX = DBL_MAX;
-    double maxSnapX = DBL_MIN;
-    double minSnapY = DBL_MAX;
-    double maxSnapY = DBL_MIN;
+    double minSnapX = std::numeric_limits<double>::max();
+    double maxSnapX = std::numeric_limits<double>::min();
+    double minSnapY = std::numeric_limits<double>::max();
+    double maxSnapY = std::numeric_limits<double>::min();
 
     auto halfThick = 0.0;
 
-    //#pragma omp parralel
+    // #pragma omp parralel
     for (auto&& p: points) {
         halfThick = std::max(halfThick, p.z);
         minSnapX = std::min(minSnapX, p.x);
@@ -859,7 +866,9 @@ void Stroke::setStrokeCapStyle(const StrokeCapStyle capStyle) { this->capStyle =
 void Stroke::debugPrint() const {
     g_message("%s", FC(FORMAT_STR("Stroke {1} / hasPressure() = {2}") % (uint64_t)this % this->hasPressure()));
 
-    for (auto&& p: points) { g_message("%lf / %lf / %lf", p.x, p.y, p.z); }
+    for (auto&& p: points) {
+        g_message("%lf / %lf / %lf", p.x, p.y, p.z);
+    }
 
     g_message("\n");
 }

@@ -115,7 +115,12 @@ auto PageBackgroundChangeController::commitPageTypeChange(const size_t pageNum, 
     PageType origType = page->getBackgroundType();
 
     // Apply the new background
-    applyPageBackground(page, pageType);
+    if (pageType.format != PageTypeFormat::Copy) {
+        applyPageBackground(page, pageType);
+    } else {
+        g_warning("Found 'Copy' page type. Doing nothing™.");
+    }
+
 
     control->firePageChanged(pageNr);
     control->updateBackgroundSizeButton();
@@ -200,13 +205,12 @@ auto PageBackgroundChangeController::applyPdfBackground(PageRef page) -> bool {
     }
 
     doc->lock();
-    auto* dlg = new PdfPagesDialog(control->getGladeSearchPath(), doc, control->getSettings());
+    auto dlg = PdfPagesDialog(control->getGladeSearchPath(), doc, control->getSettings());
     doc->unlock();
 
-    dlg->show(GTK_WINDOW(control->getGtkWindow()));
+    dlg.show(GTK_WINDOW(control->getGtkWindow()));
 
-    int selected = dlg->getSelectedPage();
-    delete dlg;
+    int selected = dlg.getSelectedPage();
 
     if (selected >= 0 && selected < static_cast<int>(doc->getPdfPageCount())) {
         // no need to set a type, if we set the page number the type is also set
@@ -260,7 +264,7 @@ void PageBackgroundChangeController::copyBackgroundFromOtherPage(PageRef target,
     }
 }
 
-void PageBackgroundChangeController::insertNewPage(size_t position) {
+void PageBackgroundChangeController::insertNewPage(size_t position, bool shouldScrollToPage) {
     control->clearSelectionEndText();
 
     Document* doc = control->getDocument();
@@ -293,7 +297,7 @@ void PageBackgroundChangeController::insertNewPage(size_t position) {
         }
     }
 
-    control->insertPage(page, position);
+    control->insertPage(page, position, shouldScrollToPage);
 }
 
 void PageBackgroundChangeController::documentChanged(DocumentChangeType type) {}

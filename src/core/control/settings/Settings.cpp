@@ -20,9 +20,9 @@
 #include "gui/toolbarMenubar/model/ColorPalette.h"  // for Palette
 #include "model/FormatDefinitions.h"                // for FormatUnits, XOJ_...
 #include "util/Color.h"
-#include "util/PathUtil.h"                          // for getConfigFile
-#include "util/Util.h"                              // for PRECISION_FORMAT_...
-#include "util/i18n.h"                              // for _
+#include "util/PathUtil.h"  // for getConfigFile
+#include "util/Util.h"      // for PRECISION_FORMAT_...
+#include "util/i18n.h"      // for _
 
 #include "ButtonConfig.h"  // for ButtonConfig
 #include "config-dev.h"    // for PALETTE_FILE
@@ -46,12 +46,7 @@ constexpr auto DEFAULT_FONT_SIZE = 12;
 
 Settings::Settings(fs::path filepath): filepath(std::move(filepath)) { loadDefault(); }
 
-Settings::~Settings() {
-    for (auto& i: this->buttonConfig) {
-        delete i;
-        i = nullptr;
-    }
-}
+Settings::~Settings() = default;
 
 void Settings::loadDefault() {
     this->pressureSensitivity = true;
@@ -74,6 +69,8 @@ void Settings::loadDefault() {
 
     this->numPairsOffset = 1;
 
+    this->emptyLastPageAppend = EmptyLastPageAppendType::Disabled;
+
     this->edgePanSpeed = 20.0;
     this->edgePanMaxMult = 5.0;
 
@@ -88,8 +85,11 @@ void Settings::loadDefault() {
     this->mainWndWidth = 800;
     this->mainWndHeight = 600;
 
+    this->fullscreenActive = false;
+
     this->showSidebar = true;
     this->sidebarWidth = 150;
+    this->sidebarNumberingStyle = SidebarNumberingStyle::DEFAULT;
 
     this->showToolbar = true;
 
@@ -103,6 +103,7 @@ void Settings::loadDefault() {
     this->autoloadPdfXoj = true;
 
     this->stylusCursorType = STYLUS_CURSOR_DOT;
+    this->eraserVisibility = ERASER_VISIBILITY_ALWAYS;
     this->iconTheme = ICON_THEME_COLOR;
     this->highlightPosition = false;
     this->cursorHighlightColor = 0x80FFFF00;  // Yellow with 50% opacity
@@ -141,30 +142,34 @@ void Settings::loadDefault() {
 
     this->defaultSaveName = _("%F-Note-%H-%M");
 
-    // Eraser
-    this->buttonConfig[BUTTON_ERASER] =
-            new ButtonConfig(TOOL_ERASER, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
-    // Middle button
-    this->buttonConfig[BUTTON_MOUSE_MIDDLE] =
-            new ButtonConfig(TOOL_HAND, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
-    // Right button
-    this->buttonConfig[BUTTON_MOUSE_RIGHT] =
-            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
-    // Touch
-    this->buttonConfig[BUTTON_TOUCH] =
-            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
-    // Default config
-    this->buttonConfig[BUTTON_DEFAULT] =
-            new ButtonConfig(TOOL_PEN, Colors::black, TOOL_SIZE_FINE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
-    // Pen button 1
-    this->buttonConfig[BUTTON_STYLUS_ONE] =
-            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
-    // Pen button 2
-    this->buttonConfig[BUTTON_STYLUS_TWO] =
-            new ButtonConfig(TOOL_NONE, Colors::black, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    this->defaultPdfExportName = _("%{name}_annotated");
 
-    this->fullscreenHideElements = "mainMenubar";
-    this->presentationHideElements = "mainMenubar,sidebarContents";
+    // Eraser
+    this->buttonConfig[BUTTON_ERASER] = std::make_unique<ButtonConfig>(TOOL_ERASER, Colors::black, TOOL_SIZE_NONE,
+                                                                       DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    // Middle button
+    this->buttonConfig[BUTTON_MOUSE_MIDDLE] = std::make_unique<ButtonConfig>(TOOL_HAND, Colors::black, TOOL_SIZE_NONE,
+                                                                             DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    // Right button
+    this->buttonConfig[BUTTON_MOUSE_RIGHT] = std::make_unique<ButtonConfig>(TOOL_NONE, Colors::black, TOOL_SIZE_NONE,
+                                                                            DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    // Touch
+    this->buttonConfig[BUTTON_TOUCH] = std::make_unique<ButtonConfig>(TOOL_NONE, Colors::black, TOOL_SIZE_NONE,
+                                                                      DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    // Default config
+    this->buttonConfig[BUTTON_DEFAULT] = std::make_unique<ButtonConfig>(TOOL_PEN, Colors::black, TOOL_SIZE_FINE,
+                                                                        DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    // Pen button 1
+    this->buttonConfig[BUTTON_STYLUS_ONE] = std::make_unique<ButtonConfig>(TOOL_NONE, Colors::black, TOOL_SIZE_NONE,
+                                                                           DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+    // Pen button 2
+    this->buttonConfig[BUTTON_STYLUS_TWO] = std::make_unique<ButtonConfig>(TOOL_NONE, Colors::black, TOOL_SIZE_NONE,
+                                                                           DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
+
+    // default view modes
+    this->activeViewMode = PresetViewModeIds::VIEW_MODE_DEFAULT;
+    this->viewModes =
+            std::vector<ViewMode>{VIEW_MODE_STRUCT_DEFAULT, VIEW_MODE_STRUCT_FULLSCREEN, VIEW_MODE_STRUCT_PRESENTATION};
 
     this->touchZoomStartThreshold = 0.0;
 
@@ -184,8 +189,8 @@ void Settings::loadDefault() {
     // clang-format on
 
     this->audioSampleRate = 44100.0;
-    this->audioInputDevice = -1;
-    this->audioOutputDevice = -1;
+    this->audioInputDevice = AUDIO_INPUT_SYSTEM_DEFAULT;
+    this->audioOutputDevice = AUDIO_OUTPUT_SYSTEM_DEFAULT;
     this->audioGain = 1.0;
     this->defaultSeekTime = 5;
 
@@ -223,6 +228,21 @@ void Settings::loadDefault() {
     this->stabilizerFinalizeStroke = true;
     /**/
 }
+
+auto Settings::loadViewMode(ViewModeId mode) -> bool {
+    if (mode < 0 || mode >= viewModes.size()) {
+        return false;
+    }
+    auto viewMode = viewModes.at(mode);
+    fullscreenActive = viewMode.goFullscreen;
+    menubarVisible = viewMode.showMenubar;
+    showToolbar = viewMode.showToolbar;
+    showSidebar = viewMode.showSidebar;
+    this->activeViewMode = mode;
+    return true;
+}
+
+auto Settings::getViewModes() const -> const std::vector<ViewMode>& { return this->viewModes; }
 
 /**
  * tempg_ascii_strtod
@@ -337,7 +357,7 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     xmlChar* value = xmlGetProp(cur, reinterpret_cast<const xmlChar*>("value"));
     if (value == nullptr) {
         xmlFree(name);
-        g_warning("No value property!\n");
+        g_warning("Settings::No value property!\n");
         return;
     }
 
@@ -383,6 +403,13 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->filepathShownInTitlebar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("showSidebar")) == 0) {
         this->showSidebar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarNumberingStyle")) == 0) {
+        int num = std::stoi(reinterpret_cast<char*>(value));
+        if (num < static_cast<int>(SidebarNumberingStyle::MIN) || static_cast<int>(SidebarNumberingStyle::MAX) < num) {
+            num = static_cast<int>(SidebarNumberingStyle::DEFAULT);
+            g_warning("Settings::Invalid sidebarNumberingStyle value. Reset to default.");
+        }
+        this->sidebarNumberingStyle = static_cast<SidebarNumberingStyle>(num);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarWidth")) == 0) {
         this->sidebarWidth = std::max<int>(g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10), 50);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarOnRight")) == 0) {
@@ -415,6 +442,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->autoloadPdfXoj = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("stylusCursorType")) == 0) {
         this->stylusCursorType = stylusCursorTypeFromString(reinterpret_cast<const char*>(value));
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("eraserVisibility")) == 0) {
+        this->eraserVisibility = eraserVisibilityFromString(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("iconTheme")) == 0) {
         this->iconTheme = iconThemeFromString(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("highlightPosition")) == 0) {
@@ -433,6 +462,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->useStockIcons = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("defaultSaveName")) == 0) {
         this->defaultSaveName = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("defaultPdfExportName")) == 0) {
+        this->defaultPdfExportName = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pluginEnabled")) == 0) {
         this->pluginEnabled = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pluginDisabled")) == 0) {
@@ -447,10 +478,15 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->autosaveEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("autosaveTimeout")) == 0) {
         this->autosaveTimeout = g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10);
-    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("fullscreenHideElements")) == 0) {
-        this->fullscreenHideElements = reinterpret_cast<const char*>(value);
-    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("presentationHideElements")) == 0) {
-        this->presentationHideElements = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("defaultViewModeAttributes")) == 0) {
+        this->viewModes.at(PresetViewModeIds::VIEW_MODE_DEFAULT) =
+                settingsStringToViewMode(reinterpret_cast<const char*>(value));
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("fullscreenViewModeAttributes")) == 0) {
+        this->viewModes.at(PresetViewModeIds::VIEW_MODE_FULLSCREEN) =
+                settingsStringToViewMode(reinterpret_cast<const char*>(value));
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("presentationViewModeAttributes")) == 0) {
+        this->viewModes.at(PresetViewModeIds::VIEW_MODE_PRESENTATION) =
+                settingsStringToViewMode(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("touchZoomStartThreshold")) == 0) {
         this->touchZoomStartThreshold = g_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pageRerenderThreshold")) == 0) {
@@ -528,6 +564,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->inputSystemTPCButton = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("inputSystemDrawOutsideWindow")) == 0) {
         this->inputSystemDrawOutsideWindow = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("emptyLastPageAppend")) == 0) {
+        this->emptyLastPageAppend = emptyLastPageAppendFromString(reinterpret_cast<char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("strokeFilterIgnoreTime")) == 0) {
         this->strokeFilterIgnoreTime = g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("strokeFilterIgnoreLength")) == 0) {
@@ -617,7 +655,7 @@ void Settings::loadButtonConfig() {
 
     for (int i = 0; i < BUTTON_COUNT; i++) {
         SElement& e = s.child(buttonToString(static_cast<Button>(i)));
-        ButtonConfig* cfg = buttonConfig[i];
+        const auto& cfg = buttonConfig[i];
 
         string sType;
         if (e.getString("tool", sType)) {
@@ -793,7 +831,7 @@ void Settings::saveButtonConfig() {
 
     for (int i = 0; i < BUTTON_COUNT; i++) {
         SElement& e = s.child(buttonToString(static_cast<Button>(i)));
-        ButtonConfig* cfg = buttonConfig[i];
+        const auto& cfg = buttonConfig[i];
 
         ToolType type = cfg->action;
         e.setString("tool", toolTypeToString(type));
@@ -889,6 +927,7 @@ void Settings::save() {
 
     SAVE_BOOL_PROP(showSidebar);
     SAVE_INT_PROP(sidebarWidth);
+    xmlNode = saveProperty("sidebarNumberingStyle", static_cast<int>(sidebarNumberingStyle), root);
 
     SAVE_BOOL_PROP(sidebarOnRight);
     SAVE_BOOL_PROP(scrollbarOnLeft);
@@ -902,16 +941,27 @@ void Settings::save() {
     SAVE_BOOL_PROP(layoutRightToLeft);
     SAVE_BOOL_PROP(layoutBottomToTop);
     SAVE_INT_PROP(numPairsOffset);
+    xmlNode = saveProperty("emptyLastPageAppend", emptyLastPageAppendToString(this->emptyLastPageAppend), root);
+    ATTACH_COMMENT("The icon theme, allowed values are \"disabled\", \"onDrawOfLastPage\", and \"onScrollOfLastPage\"");
     SAVE_BOOL_PROP(presentationMode);
 
-    SAVE_STRING_PROP(fullscreenHideElements);
-    ATTACH_COMMENT("Which gui elements are hidden if you are in Fullscreen mode, separated by a colon (,)");
-
-    SAVE_STRING_PROP(presentationHideElements);
-    ATTACH_COMMENT("Which gui elements are hidden if you are in Presentation mode, separated by a colon (,)");
+    auto defaultViewModeAttributes = viewModeToSettingsString(viewModes.at(PresetViewModeIds::VIEW_MODE_DEFAULT));
+    auto fullscreenViewModeAttributes = viewModeToSettingsString(viewModes.at(PresetViewModeIds::VIEW_MODE_FULLSCREEN));
+    auto presentationViewModeAttributes =
+            viewModeToSettingsString(viewModes.at(PresetViewModeIds::VIEW_MODE_PRESENTATION));
+    SAVE_STRING_PROP(defaultViewModeAttributes);
+    ATTACH_COMMENT("Which GUI elements are shown in default view mode, separated by a colon (,)");
+    SAVE_STRING_PROP(fullscreenViewModeAttributes);
+    ATTACH_COMMENT("Which GUI elements are shown in fullscreen view mode, separated by a colon (,)");
+    SAVE_STRING_PROP(presentationViewModeAttributes);
+    ATTACH_COMMENT("Which GUI elements are shown in presentation view mode, separated by a colon (,)");
 
     xmlNode = saveProperty("stylusCursorType", stylusCursorTypeToString(this->stylusCursorType), root);
     ATTACH_COMMENT("The cursor icon used with a stylus, allowed values are \"none\", \"dot\", \"big\", \"arrow\"");
+
+    xmlNode = saveProperty("eraserVisibility", eraserVisibilityToString(this->eraserVisibility), root);
+    ATTACH_COMMENT("The eraser cursor visibility used with a stylus, allowed values are \"never\", \"always\", "
+                   "\"hover\", \"touch\"");
 
     xmlNode = saveProperty("iconTheme", iconThemeToString(this->iconTheme), root);
     ATTACH_COMMENT("The icon theme, allowed values are \"iconsColor\", \"iconsLucide\"");
@@ -941,6 +991,7 @@ void Settings::save() {
     SAVE_BOOL_PROP(autoloadMostRecent);
     SAVE_BOOL_PROP(autoloadPdfXoj);
     SAVE_STRING_PROP(defaultSaveName);
+    SAVE_STRING_PROP(defaultPdfExportName);
 
     SAVE_BOOL_PROP(autosaveEnabled);
     SAVE_INT_PROP(autosaveTimeout);
@@ -1269,6 +1320,18 @@ void Settings::setStylusCursorType(StylusCursorType type) {
     save();
 }
 
+auto Settings::getEraserVisibility() const -> EraserVisibility { return this->eraserVisibility; }
+
+void Settings::setEraserVisibility(EraserVisibility eraserVisibility) {
+    if (this->eraserVisibility == eraserVisibility) {
+        return;
+    }
+
+    this->eraserVisibility = eraserVisibility;
+
+    save();
+}
+
 auto Settings::getIconTheme() const -> IconTheme { return this->iconTheme; }
 
 void Settings::setIconTheme(IconTheme iconTheme) {
@@ -1277,6 +1340,18 @@ void Settings::setIconTheme(IconTheme iconTheme) {
     }
 
     this->iconTheme = iconTheme;
+
+    save();
+}
+
+auto Settings::getSidebarNumberingStyle() const -> SidebarNumberingStyle { return this->sidebarNumberingStyle; };
+
+void Settings::setSidebarNumberingStyle(SidebarNumberingStyle numberingStyle) {
+    if (this->sidebarNumberingStyle == numberingStyle) {
+        return;
+    }
+
+    this->sidebarNumberingStyle = numberingStyle;
 
     save();
 }
@@ -1478,6 +1553,18 @@ void Settings::setDefaultSaveName(const string& name) {
     save();
 }
 
+auto Settings::getDefaultPdfExportName() const -> string const& { return this->defaultPdfExportName; }
+
+void Settings::setDefaultPdfExportName(const string& name) {
+    if (this->defaultPdfExportName == name) {
+        return;
+    }
+
+    this->defaultPdfExportName = name;
+
+    save();
+}
+
 auto Settings::getPageTemplate() const -> string const& { return this->pageTemplate; }
 
 void Settings::setPageTemplate(const string& pageTemplate) {
@@ -1555,12 +1642,16 @@ void Settings::setPresentationMode(bool presentationMode) {
     if (this->presentationMode == presentationMode) {
         return;
     }
-
+    if (presentationMode) {
+        this->activeViewMode = PresetViewModeIds::VIEW_MODE_PRESENTATION;
+    }
     this->presentationMode = presentationMode;
     save();
 }
 
-auto Settings::isPresentationMode() const -> bool { return this->presentationMode; }
+auto Settings::isPresentationMode() const -> bool {
+    return this->activeViewMode == PresetViewModeIds::VIEW_MODE_PRESENTATION;
+}
 
 void Settings::setPressureSensitivity(gboolean presureSensitivity) {
     if (this->pressureSensitivity == presureSensitivity) {
@@ -1581,6 +1672,17 @@ void Settings::setPairsOffset(int numOffset) {
 }
 
 auto Settings::getPairsOffset() const -> int { return this->numPairsOffset; }
+
+void Settings::setEmptyLastPageAppend(EmptyLastPageAppendType emptyLastPageAppend) {
+    if (this->emptyLastPageAppend == emptyLastPageAppend) {
+        return;
+    }
+
+    this->emptyLastPageAppend = emptyLastPageAppend;
+    save();
+}
+
+auto Settings::getEmptyLastPageAppend() const -> EmptyLastPageAppendType { return this->emptyLastPageAppend; }
 
 void Settings::setViewColumns(int numColumns) {
     if (this->numColumns == numColumns) {
@@ -1743,6 +1845,8 @@ void Settings::setAreStockIconsUsed(bool use) {
 
 auto Settings::areStockIconsUsed() const -> bool { return this->useStockIcons; }
 
+auto Settings::isFullscreen() const -> bool { return this->fullscreenActive; }
+
 auto Settings::isSidebarVisible() const -> bool { return this->showSidebar; }
 
 void Settings::setSidebarVisible(bool visible) {
@@ -1804,27 +1908,15 @@ auto Settings::getCustomElement(const string& name) -> SElement& { return this->
 
 void Settings::customSettingsChanged() { save(); }
 
-auto Settings::getButtonConfig(int id) -> ButtonConfig* {
-    if (id < 0 || id >= BUTTON_COUNT) {
+auto Settings::getButtonConfig(unsigned int id) -> ButtonConfig* {
+    if (id >= this->buttonConfig.size()) {
         g_error("Settings::getButtonConfig try to get id=%i out of range!", id);
         return nullptr;
     }
-    return this->buttonConfig[id];
+    return this->buttonConfig[id].get();
 }
 
-auto Settings::getFullscreenHideElements() const -> string const& { return this->fullscreenHideElements; }
-
-void Settings::setFullscreenHideElements(string elements) {
-    this->fullscreenHideElements = std::move(elements);
-    save();
-}
-
-auto Settings::getPresentationHideElements() const -> string const& { return this->presentationHideElements; }
-
-void Settings::setPresentationHideElements(string elements) {
-    this->presentationHideElements = std::move(elements);
-    save();
-}
+void Settings::setViewMode(ViewModeId mode, ViewMode viewMode) { viewModes.at(mode) = viewMode; }
 
 auto Settings::getTouchZoomStartThreshold() const -> double { return this->touchZoomStartThreshold; }
 void Settings::setTouchZoomStartThreshold(double threshold) {

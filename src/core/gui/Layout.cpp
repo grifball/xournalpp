@@ -1,6 +1,7 @@
 #include "Layout.h"
 
 #include <algorithm>    // for max, lower_bound, transform
+#include <cmath>        // for abs
 #include <iterator>     // for begin, end, distance
 #include <numeric>      // for accumulate
 #include <optional>     // for optional
@@ -13,6 +14,7 @@
 #include "gui/LayoutMapper.h"           // for LayoutMapper, GridPosition
 #include "gui/PageView.h"               // for XojPageView
 #include "gui/scroll/ScrollHandling.h"  // for ScrollHandling
+#include "model/Document.h"             // for Document
 #include "util/Rectangle.h"             // for Rectangle
 #include "util/safe_casts.h"            // for strict_cast, as_signed, as_si...
 
@@ -53,8 +55,32 @@ void Layout::horizontalScrollChanged(GtkAdjustment* adjustment, Layout* layout) 
 void Layout::verticalScrollChanged(GtkAdjustment* adjustment, Layout* layout) {
     Layout::checkScroll(adjustment, layout->lastScrollVertical);
     layout->updateVisibility();
+
+    layout->maybeAddLastPage(layout);
 }
 
+void Layout::maybeAddLastPage(Layout* layout) {
+    auto* control = this->view->getControl();
+    auto* settings = control->getSettings();
+    if (settings->getEmptyLastPageAppend() == EmptyLastPageAppendType::OnScrollToEndOfLastPage) {
+        // If the layout is 5px away from the end of the last page
+        if (std::abs((layout->getMinimalHeight() - layout->getVisibleRect().y) - layout->getVisibleRect().height) < 5) {
+            auto* doc = control->getDocument();
+            doc->lock();
+            auto pdfPageCount = doc->getPdfPageCount();
+            doc->unlock();
+            if (pdfPageCount == 0) {
+                auto currentPage = control->getCurrentPageNo();
+                doc->lock();
+                auto lastPage = doc->getPageCount() - 1;
+                doc->unlock();
+                if (currentPage == lastPage) {
+                    control->insertNewPage(currentPage + 1, false);
+                }
+            }
+        }
+    }
+}
 
 void Layout::checkScroll(GtkAdjustment* adjustment, double& lastScroll) {
     lastScroll = gtk_adjustment_get_value(adjustment);
@@ -79,8 +105,7 @@ void Layout::updateVisibility() {
             auto optionalPage = this->mapper.at({col, row});
             if (optionalPage)  // a page exists at this grid location
             {
-                XojPageView* pageView = this->view->viewPages[*optionalPage];
-
+                auto& pageView = this->view->viewPages[*optionalPage];
 
                 // check if grid location is visible as an aprox for page visiblity:
                 if (!(visRect.x > x2 || visRect.x + visRect.width < x1)  // visrect not outside current row/col
@@ -153,7 +178,7 @@ void Layout::recalculate_int() const {
         auto const& raster_p = mapper.at(pageIdx);  // auto [c, r] raster = mapper.at();
         auto const& c = raster_p.col;
         auto const& r = raster_p.row;
-        XojPageView* v = view->viewPages[pageIdx];
+        auto& v = view->viewPages[pageIdx];
         pc.widthCols[c] = std::max(pc.widthCols[c], v->getDisplayWidthDouble());
         pc.heightRows[r] = std::max(pc.heightRows[r], v->getDisplayHeightDouble());
     }
@@ -223,7 +248,7 @@ void Layout::layoutPages(int width, int height) {
 
             if (optionalPage) {
 
-                XojPageView* v = this->view->viewPages[*optionalPage];
+                auto& v = this->view->viewPages[*optionalPage];
                 v->setMappedRowCol(strict_cast<int>(r),
                                    strict_cast<int>(c));  // store row and column for e.g. proper arrow key navigation
                 auto vDisplayWidth = v->getDisplayWidthDouble();
@@ -360,7 +385,7 @@ auto Layout::getPageViewAt(int x, int y) -> XojPageView* {
     auto optionalPage = this->mapper.at({foundCol, foundRow});
 
     if (optionalPage && this->view->viewPages[*optionalPage]->containsPoint(x, y, false)) {
-        return this->view->viewPages[*optionalPage];
+        return this->view->viewPages[*optionalPage].get();
     }
 
     return nullptr;

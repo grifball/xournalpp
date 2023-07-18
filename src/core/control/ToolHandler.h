@@ -107,6 +107,14 @@ public:
     Color getColor() const;
 
     /**
+     * @brief Enable/disable fill for the tool selected in the toolbar
+     *
+     * @param fill whether fill should be enabled
+     * @param fireEvent whether a toolFillChanged event should be fired
+     */
+    void setFillEnabled(bool fill, bool fireEvent);
+
+    /**
      * @brief Get the Fill of the active tool
      *
      * @return -1 if fill is disabled
@@ -336,6 +344,12 @@ public:
      * @return
      */
     bool isSinglePageTool() const;
+
+    /**
+     * @brief Whether the tool supports short taps filtering (for floating toolbox or selection)
+     * see Preferences->Drawing Area->Action on Tool tap
+     */
+    bool supportsTapFilter() const;
 
 protected:
     void initTools();

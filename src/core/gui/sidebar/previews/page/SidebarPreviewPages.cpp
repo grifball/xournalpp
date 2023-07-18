@@ -176,7 +176,6 @@ void SidebarPreviewPages::actionPerformed(SidebarActions action) {
 }
 
 void SidebarPreviewPages::updatePreviews() {
-    for (SidebarPreviewBaseEntry* p: this->previews) { delete p; }
     this->previews.clear();
 
     Document* doc = this->getControl()->getDocument();
@@ -184,13 +183,15 @@ void SidebarPreviewPages::updatePreviews() {
     size_t len = doc->getPageCount();
     for (size_t i = 0; i < len; i++) {
         auto page = doc->getPage(i);
-        SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, page);
-        this->previews.push_back(p);
-        p->setBookmarked(page->isBookmarked());
+        SidebarPreviewBaseEntry* pre = new SidebarPreviewPageEntry(this, page);
+        this->previews.push_back(pre);
+        pre->setBookmarked(page->isBookmarked());
         if (i == this->selectedEntry) {
-          p->setSelected(true);
+          pre->setSelected(true);
         }
+        auto p = std::make_unique<SidebarPreviewPageEntry>(this, doc->getPage(i), i);
         gtk_layout_put(GTK_LAYOUT(this->iconViewPreview), p->getWidget(), 0, 0);
+        this->previews.emplace_back(std::move(p));
     }
 
     layout();
@@ -201,7 +202,7 @@ void SidebarPreviewPages::pageSizeChanged(size_t page) {
     if (page == npos || page >= this->previews.size()) {
         return;
     }
-    SidebarPreviewBaseEntry* p = this->previews[page];
+    auto& p = this->previews[page];
     p->updateSize();
     p->repaint();
 
@@ -213,7 +214,7 @@ void SidebarPreviewPages::pageChanged(size_t page) {
         return;
     }
 
-    SidebarPreviewBaseEntry* p = this->previews[page];
+    auto& p = this->previews[page];
     p->repaint();
 }
 
@@ -222,11 +223,12 @@ void SidebarPreviewPages::pageDeleted(size_t page) {
         return;
     }
 
-    delete previews[page];
     previews.erase(previews.begin() + page);
 
     // Unselect page, to prevent double selection displaying
     unselectPage();
+
+    updateIndices();
 
     layout();
 }
@@ -236,20 +238,22 @@ void SidebarPreviewPages::pageInserted(size_t page) {
     doc->lock();
 
     PageRef pr = doc->getPage(page);
-    SidebarPreviewBaseEntry* p = new SidebarPreviewPageEntry(this, pr);
-    p->setBookmarked(pr->isBookmarked());
+    SidebarPreviewBaseEntry* pre = new SidebarPreviewPageEntry(this, pr);
+    pre->setBookmarked(pr->isBookmarked());
     if (page == this->selectedEntry) {
-        p->setSelected(true);
+        pre->setSelected(true);
     }
+    auto p = std::make_unique<SidebarPreviewPageEntry>(this, doc->getPage(page), page);
 
     doc->unlock();
 
-    this->previews.insert(this->previews.begin() + page, p);
-
     gtk_layout_put(GTK_LAYOUT(this->iconViewPreview), p->getWidget(), 0, 0);
+    this->previews.insert(this->previews.begin() + page, std::move(p));
 
     // Unselect page, to prevent double selection displaying
     unselectPage();
+
+    updateIndices();
 
     layout();
 }
@@ -258,7 +262,9 @@ void SidebarPreviewPages::pageInserted(size_t page) {
  * Unselect the last selected page, if any
  */
 void SidebarPreviewPages::unselectPage() {
-    for (SidebarPreviewBaseEntry* p: this->previews) { p->setSelected(false); }
+    for (auto& p: this->previews) {
+        p->setSelected(false);
+    }
 }
 
 void SidebarPreviewPages::pageSelected(size_t page) {
@@ -272,7 +278,7 @@ void SidebarPreviewPages::pageSelected(size_t page) {
     }
 
     if (this->selectedEntry != npos && this->selectedEntry < this->previews.size()) {
-        SidebarPreviewBaseEntry* p = this->previews[this->selectedEntry];
+        auto& p = this->previews[this->selectedEntry];
         p->setSelected(true);
         scrollToPreview(this);
 
@@ -303,4 +309,11 @@ void SidebarPreviewPages::pageSelected(size_t page) {
 
 void SidebarPreviewPages::openPreviewContextMenu() {
     gtk_menu_popup(GTK_MENU(this->contextMenu), nullptr, nullptr, nullptr, nullptr, 3, gtk_get_current_event_time());
+}
+
+void SidebarPreviewPages::updateIndices() {
+    size_t index = 0;
+    for (auto& preview: this->previews) {
+        dynamic_cast<SidebarPreviewPageEntry*>(preview.get())->setIndex(index++);
+    }
 }

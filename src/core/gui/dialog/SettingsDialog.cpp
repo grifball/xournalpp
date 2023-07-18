@@ -157,8 +157,8 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
     GtkWidget* container = get("hboxInputDeviceClasses");
     for (const InputDevice& inputDevice: deviceList) {
         // Only add real devices (core pointers have vendor and product id nullptr)
-        this->deviceClassConfigs.push_back(
-                new DeviceClassConfigGui(getGladeSearchPath(), container, settings, inputDevice));
+        this->deviceClassConfigs.emplace_back(
+                std::make_unique<DeviceClassConfigGui>(getGladeSearchPath(), container, settings, inputDevice));
     }
     if (deviceList.empty()) {
         GtkWidget* label = gtk_label_new("");
@@ -171,27 +171,14 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
     gtk_container_add(GTK_CONTAINER(this->get("latexTabBox")), this->latexPanel.get("latexSettingsPanel"));
 }
 
-SettingsDialog::~SettingsDialog() {
-    for (ButtonConfigGui* bcg: this->buttonConfigs) {
-        delete bcg;
-    }
-    this->buttonConfigs.clear();
-
-    for (DeviceClassConfigGui* dev: this->deviceClassConfigs) {
-        delete dev;
-    }
-    this->deviceClassConfigs.clear();
-
-    // DO NOT delete settings!
-    this->settings = nullptr;
-}
+SettingsDialog::~SettingsDialog() = default;
 
 void SettingsDialog::initLanguageSettings() {
     languageConfig = std::make_unique<LanguageConfigGui>(getGladeSearchPath(), get("hboxLanguageSelect"), settings);
 }
 
 void SettingsDialog::initMouseButtonEvents(const char* hbox, int button, bool withDevice) {
-    this->buttonConfigs.push_back(new ButtonConfigGui(getGladeSearchPath(), get(hbox), settings, button, withDevice));
+    this->buttonConfigs.emplace_back(std::make_unique<ButtonConfigGui>(getGladeSearchPath(), get(hbox), settings, button, withDevice));
 }
 
 void SettingsDialog::initMouseButtonEvents() {
@@ -388,7 +375,7 @@ void SettingsDialog::load() {
     loadCheckbox("cbStabilizerEnableFinalizeStroke", settings->getStabilizerFinalizeStroke());
 
     GtkWidget* sbStabilizerBuffersize = get("sbStabilizerBuffersize");
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(sbStabilizerBuffersize), settings->getStabilizerBuffersize());
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(sbStabilizerBuffersize), static_cast<double>(settings->getStabilizerBuffersize()));
     GtkWidget* sbStabilizerDeadzoneRadius = get("sbStabilizerDeadzoneRadius");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(sbStabilizerDeadzoneRadius), settings->getStabilizerDeadzoneRadius());
     GtkWidget* sbStabilizerDrag = get("sbStabilizerDrag");
@@ -406,9 +393,14 @@ void SettingsDialog::load() {
     showStabilizerPreprocessorOptions(settings->getStabilizerPreprocessor());
     /***********/
 
+    GtkComboBox* cbSidebarNumberingStyle = GTK_COMBO_BOX(get("cbSidebarPageNumberStyle"));
+    gtk_combo_box_set_active(cbSidebarNumberingStyle, static_cast<int>(settings->getSidebarNumberingStyle()));
+
     GtkWidget* txtDefaultSaveName = get("txtDefaultSaveName");
-    string txt = settings->getDefaultSaveName();
-    gtk_entry_set_text(GTK_ENTRY(txtDefaultSaveName), txt.c_str());
+    gtk_entry_set_text(GTK_ENTRY(txtDefaultSaveName), settings->getDefaultSaveName().c_str());
+
+    GtkWidget* txtDefaultPdfName = get("txtDefaultPdfName");
+    gtk_entry_set_text(GTK_ENTRY(txtDefaultPdfName), settings->getDefaultPdfExportName().c_str());
 
     gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(get("fcAudioPath")),
                                         Util::toGFilename(settings->getAudioFolder()).c_str());
@@ -425,6 +417,11 @@ void SettingsDialog::load() {
 
     GtkWidget* spPairsOffset = get("spPairsOffset");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spPairsOffset), settings->getPairsOffset());
+
+    EmptyLastPageAppendType append = settings->getEmptyLastPageAppend();
+    loadCheckbox("rdLastPageAppendOnDrawOfLastPage", append == EmptyLastPageAppendType::OnDrawOfLastPage);
+    loadCheckbox("rdLastPageAppendOnScrollToEndOfLastPage", append == EmptyLastPageAppendType::OnScrollToEndOfLastPage);
+    loadCheckbox("rdLastPageAppendDisabled", append == EmptyLastPageAppendType::Disabled);
 
     GtkWidget* spSnapRotationTolerance = get("spSnapRotationTolerance");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spSnapRotationTolerance), settings->getSnapRotationTolerance());
@@ -513,6 +510,22 @@ void SettingsDialog::load() {
             break;
     }
 
+    switch (settings->getEraserVisibility()) {
+        case ERASER_VISIBILITY_NEVER:
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbEraserVisibility")), 0);
+            break;
+        case ERASER_VISIBILITY_HOVER:
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbEraserVisibility")), 2);
+            break;
+        case ERASER_VISIBILITY_TOUCH:
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbEraserVisibility")), 3);
+            break;
+        case ERASER_VISIBILITY_ALWAYS:
+        default:
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbEraserVisibility")), 1);
+            break;
+    }
+
     switch (settings->getIconTheme()) {
         case ICON_THEME_LUCIDE:
             gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbIconTheme")), 1);
@@ -523,34 +536,23 @@ void SettingsDialog::load() {
             break;
     }
 
-    bool hideFullscreenMenubar = false;
-    bool hideFullscreenSidebar = false;
-    bool hidePresentationMenubar = false;
-    bool hidePresentationSidebar = false;
+    auto viewMode = settings->getViewModes().at(PresetViewModeIds::VIEW_MODE_FULLSCREEN);
+    bool showFullscreenMenubar = viewMode.showMenubar;
+    bool showFullscreenToolbar = viewMode.showToolbar;
+    bool showFullscreenSidebar = viewMode.showSidebar;
+    viewMode = settings->getViewModes().at(PresetViewModeIds::VIEW_MODE_PRESENTATION);
+    bool showPresentationMenubar = viewMode.showMenubar;
+    bool showPresentationToolbar = viewMode.showToolbar;
+    bool showPresentationSidebar = viewMode.showSidebar;
+    bool goPresentationFullscreen = viewMode.goFullscreen;
 
-    string hidden = settings->getFullscreenHideElements();
-
-    for (const string& element: StringUtils::split(hidden, ',')) {
-        if (element == "mainMenubar") {
-            hideFullscreenMenubar = true;
-        } else if (element == "sidebarContents") {
-            hideFullscreenSidebar = true;
-        }
-    }
-
-    hidden = settings->getPresentationHideElements();
-    for (const string& element: StringUtils::split(hidden, ',')) {
-        if (element == "mainMenubar") {
-            hidePresentationMenubar = true;
-        } else if (element == "sidebarContents") {
-            hidePresentationSidebar = true;
-        }
-    }
-
-    loadCheckbox("cbHideFullscreenMenubar", hideFullscreenMenubar);
-    loadCheckbox("cbHideFullscreenSidebar", hideFullscreenSidebar);
-    loadCheckbox("cbHidePresentationMenubar", hidePresentationMenubar);
-    loadCheckbox("cbHidePresentationSidebar", hidePresentationSidebar);
+    loadCheckbox("cbShowFullscreenMenubar", showFullscreenMenubar);
+    loadCheckbox("cbShowFullscreenToolbar", showFullscreenToolbar);
+    loadCheckbox("cbShowFullscreenSidebar", showFullscreenSidebar);
+    loadCheckbox("cbShowPresentationMenubar", showPresentationMenubar);
+    loadCheckbox("cbShowPresentationToolbar", showPresentationToolbar);
+    loadCheckbox("cbShowPresentationSidebar", showPresentationSidebar);
+    loadCheckbox("cbPresentationGoFullscreen", goPresentationFullscreen);
     loadCheckbox("cbHideMenubarStartup", settings->isMenubarVisible());
     loadCheckbox("cbShowFilepathInTitlebar", settings->isFilepathInTitlebarShown());
 
@@ -614,7 +616,7 @@ void SettingsDialog::load() {
     }
     for (size_t i = 0; i < this->audioInputDevices.size(); i++) {
         if (this->audioInputDevices[i].getSelected()) {
-            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbAudioInputDevice")), i + 1);
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbAudioInputDevice")), static_cast<gint>(i + 1));
         }
     }
 
@@ -627,7 +629,7 @@ void SettingsDialog::load() {
     }
     for (size_t i = 0; i < this->audioOutputDevices.size(); i++) {
         if (this->audioOutputDevices[i].getSelected()) {
-            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbAudioOutputDevice")), i + 1);
+            gtk_combo_box_set_active(GTK_COMBO_BOX(get("cbAudioOutputDevice")), static_cast<gint>(i + 1));
         }
     }
 
@@ -651,47 +653,6 @@ void SettingsDialog::load() {
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(get("spDefaultSeekTime")), settings->getDefaultSeekTime());
 
     this->latexPanel.load(settings->latexSettings);
-}
-
-auto SettingsDialog::updateHideString(const string& hidden, bool hideMenubar, bool hideSidebar) -> string {
-    string newHidden;
-
-    for (const string& element: StringUtils::split(hidden, ',')) {
-        if (element == "mainMenubar") {
-            if (hideMenubar) {
-                hideMenubar = false;
-            } else {
-                continue;
-            }
-        } else if (element == "sidebarContents") {
-            if (hideSidebar) {
-                hideSidebar = false;
-            } else {
-                continue;
-            }
-        }
-
-        if (!newHidden.empty()) {
-            newHidden += ",";
-        }
-        newHidden += element;
-    }
-
-    if (hideMenubar) {
-        if (!newHidden.empty()) {
-            newHidden += ",";
-        }
-        newHidden += "mainMenubar";
-    }
-
-    if (hideSidebar) {
-        if (!newHidden.empty()) {
-            newHidden += ",";
-        }
-        newHidden += "sidebarContents";
-    }
-
-    return newHidden;
 }
 
 void SettingsDialog::save() {
@@ -727,7 +688,8 @@ void SettingsDialog::save() {
             gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbStabilizerAveragingMethods")))));
     settings->setStabilizerPreprocessor(static_cast<StrokeStabilizer::Preprocessor>(
             gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbStabilizerPreprocessors")))));
-    settings->setStabilizerBuffersize(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(get("sbStabilizerBuffersize"))));
+    settings->setStabilizerBuffersize(
+            static_cast<size_t>(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(get("sbStabilizerBuffersize")))));
     settings->setStabilizerDeadzoneRadius(
             gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("sbStabilizerDeadzoneRadius"))));
     settings->setStabilizerDrag(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("sbStabilizerDrag"))));
@@ -735,6 +697,9 @@ void SettingsDialog::save() {
     settings->setStabilizerSigma(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("sbStabilizerSigma"))));
     settings->setStabilizerCuspDetection(getCheckbox("cbStabilizerEnableCuspDetection"));
     settings->setStabilizerFinalizeStroke(getCheckbox("cbStabilizerEnableFinalizeStroke"));
+
+    settings->setSidebarNumberingStyle(static_cast<SidebarNumberingStyle>(
+            gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbSidebarPageNumberStyle")))));
 
     auto scrollbarHideType =
             static_cast<std::make_unsigned<std::underlying_type<ScrollbarHideType>::type>::type>(SCROLLBAR_HIDE_NONE);
@@ -783,6 +748,22 @@ void SettingsDialog::save() {
             break;
     }
 
+    switch (gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbEraserVisibility")))) {
+        case 0:
+            settings->setEraserVisibility(ERASER_VISIBILITY_NEVER);
+            break;
+        case 2:
+            settings->setEraserVisibility(ERASER_VISIBILITY_HOVER);
+            break;
+        case 3:
+            settings->setEraserVisibility(ERASER_VISIBILITY_TOUCH);
+            break;
+        case 1:
+        default:
+            settings->setEraserVisibility(ERASER_VISIBILITY_ALWAYS);
+            break;
+    }
+
     switch (gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbIconTheme")))) {
         case 1:
             settings->setIconTheme(ICON_THEME_LUCIDE);
@@ -793,15 +774,19 @@ void SettingsDialog::save() {
             break;
     }
 
-    bool hideFullscreenMenubar = getCheckbox("cbHideFullscreenMenubar");
-    bool hideFullscreenSidebar = getCheckbox("cbHideFullscreenSidebar");
-    settings->setFullscreenHideElements(
-            updateHideString(settings->getFullscreenHideElements(), hideFullscreenMenubar, hideFullscreenSidebar));
+    ViewMode viewModeFullscreen;
+    viewModeFullscreen.goFullscreen = true;
+    viewModeFullscreen.showMenubar = getCheckbox("cbShowFullscreenMenubar");
+    viewModeFullscreen.showToolbar = getCheckbox("cbShowFullscreenToolbar");
+    viewModeFullscreen.showSidebar = getCheckbox("cbShowFullscreenSidebar");
+    settings->setViewMode(PresetViewModeIds::VIEW_MODE_FULLSCREEN, viewModeFullscreen);
 
-    bool hidePresentationMenubar = getCheckbox("cbHidePresentationMenubar");
-    bool hidePresentationSidebar = getCheckbox("cbHidePresentationSidebar");
-    settings->setPresentationHideElements(updateHideString(settings->getPresentationHideElements(),
-                                                           hidePresentationMenubar, hidePresentationSidebar));
+    ViewMode viewModePresentation;
+    viewModePresentation.showMenubar = getCheckbox("cbShowPresentationMenubar");
+    viewModePresentation.showToolbar = getCheckbox("cbShowPresentationToolbar");
+    viewModePresentation.showSidebar = getCheckbox("cbShowPresentationSidebar");
+    viewModePresentation.goFullscreen = getCheckbox("cbPresentationGoFullscreen");
+    settings->setViewMode(PresetViewModeIds::VIEW_MODE_PRESENTATION, viewModePresentation);
 
     settings->setMenubarVisible(getCheckbox("cbHideMenubarStartup"));
     settings->setFilepathInTitlebarShown(getCheckbox("cbShowFilepathInTitlebar"));
@@ -817,6 +802,7 @@ void SettingsDialog::save() {
     settings->setEagerPageCleanup(getCheckbox("cbEagerPageCleanup"));
 
     settings->setDefaultSaveName(gtk_entry_get_text(GTK_ENTRY(get("txtDefaultSaveName"))));
+    settings->setDefaultPdfExportName(gtk_entry_get_text(GTK_ENTRY(get("txtDefaultPdfName"))));
     // Todo(fabian): use Util::fromGFilename!
     auto file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(get("fcAudioPath")));
     auto path = Util::fromGFile(file);
@@ -826,20 +812,30 @@ void SettingsDialog::save() {
     }
 
     GtkWidget* spAutosaveTimeout = get("spAutosaveTimeout");
-    int autosaveTimeout = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spAutosaveTimeout));
+    int autosaveTimeout = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spAutosaveTimeout)));
     settings->setAutosaveTimeout(autosaveTimeout);
 
     if (getCheckbox("cbIgnoreFirstStylusEvents")) {
         GtkWidget* spNumIgnoredStylusEvents = get("spNumIgnoredStylusEvents");
-        int numIgnoredStylusEvents = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spNumIgnoredStylusEvents));
+        int numIgnoredStylusEvents = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spNumIgnoredStylusEvents)));
         settings->setIgnoredStylusEvents(numIgnoredStylusEvents);
     } else {
         settings->setIgnoredStylusEvents(0);  // This means nothing will be ignored
     }
 
     GtkWidget* spPairsOffset = get("spPairsOffset");
-    int numPairsOffset = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spPairsOffset));
+    int numPairsOffset = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spPairsOffset)));
     settings->setPairsOffset(numPairsOffset);
+
+    if (getCheckbox("rdLastPageAppendDisabled")) {
+        settings->setEmptyLastPageAppend(EmptyLastPageAppendType::Disabled);
+    } else if (getCheckbox("rdLastPageAppendOnDrawOfLastPage")) {
+        settings->setEmptyLastPageAppend(EmptyLastPageAppendType::OnDrawOfLastPage);
+    } else if (getCheckbox("rdLastPageAppendOnScrollToEndOfLastPage")) {
+        settings->setEmptyLastPageAppend(EmptyLastPageAppendType::OnScrollToEndOfLastPage);
+    } else {
+        settings->setEmptyLastPageAppend(EmptyLastPageAppendType::Disabled);
+    }
 
     settings->setEdgePanSpeed(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("edgePanSpeed"))));
     settings->setEdgePanMaxMult(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("edgePanMaxMult"))));
@@ -854,23 +850,23 @@ void SettingsDialog::save() {
 
 
     GtkWidget* spAddHorizontalSpace = get("spAddHorizontalSpace");
-    int addHorizontalSpaceAmount = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spAddHorizontalSpace));
+    int addHorizontalSpaceAmount = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spAddHorizontalSpace)));
     settings->setAddHorizontalSpaceAmount(addHorizontalSpaceAmount);
 
     GtkWidget* spAddVerticalSpace = get("spAddVerticalSpace");
-    int addVerticalSpaceAmount = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spAddVerticalSpace));
+    int addVerticalSpaceAmount = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spAddVerticalSpace)));
     settings->setAddVerticalSpaceAmount(addVerticalSpaceAmount);
 
     GtkWidget* spDrawDirModsRadius = get("spDrawDirModsRadius");
-    int drawDirModsRadius = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spDrawDirModsRadius));
+    int drawDirModsRadius = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spDrawDirModsRadius)));
     settings->setDrawDirModsRadius(drawDirModsRadius);
 
     GtkWidget* spStrokeIgnoreTime = get("spStrokeIgnoreTime");
-    int strokeIgnoreTime = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spStrokeIgnoreTime));
+    int strokeIgnoreTime = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spStrokeIgnoreTime)));
     GtkWidget* spStrokeIgnoreLength = get("spStrokeIgnoreLength");
     double strokeIgnoreLength = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spStrokeIgnoreLength));
     GtkWidget* spStrokeSuccessiveTime = get("spStrokeSuccessiveTime");
-    int strokeSuccessiveTime = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spStrokeSuccessiveTime));
+    int strokeSuccessiveTime = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spStrokeSuccessiveTime)));
     settings->setStrokeFilter(strokeIgnoreTime, strokeIgnoreLength, strokeSuccessiveTime);
 
     GtkWidget* spTouchZoomStartThreshold = get("spTouchZoomStartThreshold");
@@ -884,7 +880,7 @@ void SettingsDialog::save() {
 
     settings->setDisplayDpi(dpi);
 
-    for (ButtonConfigGui* bcg: this->buttonConfigs) {
+    for (auto& bcg: this->buttonConfigs) {
         bcg->saveSettings();
     }
 
@@ -921,16 +917,20 @@ void SettingsDialog::save() {
     settings->setStrokeRecognizerMinSize(
             static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spStrokeRecognizerMinSize")))));
 
-    int selectedInputDeviceIndex = gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbAudioInputDevice"))) - 1;
-    if (selectedInputDeviceIndex >= 0 && selectedInputDeviceIndex < static_cast<int>(this->audioInputDevices.size())) {
-        settings->setAudioInputDevice(static_cast<int>(this->audioInputDevices[selectedInputDeviceIndex].getIndex()));
+    size_t selectedInputDeviceIndex =
+            static_cast<size_t>(gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbAudioInputDevice"))));
+    if (selectedInputDeviceIndex == 0) {
+        settings->setAudioInputDevice(Settings::AUDIO_INPUT_SYSTEM_DEFAULT);
+    } else if (selectedInputDeviceIndex - 1 < this->audioInputDevices.size()) {
+        settings->setAudioInputDevice(this->audioInputDevices[selectedInputDeviceIndex - 1].getIndex());
     }
 
-    int selectedOutputDeviceIndex = gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbAudioOutputDevice"))) - 1;
-    if (selectedOutputDeviceIndex >= 0 &&
-        selectedOutputDeviceIndex < static_cast<int>(this->audioOutputDevices.size())) {
-        settings->setAudioOutputDevice(
-                static_cast<int>(this->audioOutputDevices[selectedOutputDeviceIndex].getIndex()));
+    size_t selectedOutputDeviceIndex =
+            static_cast<size_t>(gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbAudioOutputDevice"))));
+    if (selectedOutputDeviceIndex == 0) {
+        settings->setAudioOutputDevice(Settings::AUDIO_OUTPUT_SYSTEM_DEFAULT);
+    } else if (selectedOutputDeviceIndex < this->audioOutputDevices.size()) {
+        settings->setAudioOutputDevice(this->audioOutputDevices[selectedOutputDeviceIndex].getIndex());
     }
 
     switch (gtk_combo_box_get_active(GTK_COMBO_BOX(get("cbAudioSampleRate")))) {
@@ -951,9 +951,9 @@ void SettingsDialog::save() {
 
     settings->setAudioGain(static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spAudioGain")))));
     settings->setDefaultSeekTime(
-            static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spDefaultSeekTime")))));
+            static_cast<unsigned int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(get("spDefaultSeekTime")))));
 
-    for (DeviceClassConfigGui* deviceClassConfigGui: this->deviceClassConfigs) {
+    for (auto& deviceClassConfigGui: this->deviceClassConfigs) {
         deviceClassConfigGui->saveSettings();
     }
 

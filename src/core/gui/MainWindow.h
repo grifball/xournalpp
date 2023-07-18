@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <array>    // for array
 #include <atomic>   // for atomic_bool
 #include <cstddef>  // for size_t
 #include <memory>   // for unique_ptr
@@ -25,7 +26,8 @@
 #include "model/Font.h"                       // for XojFont
 #include "util/raii/GObjectSPtr.h"
 
-#include "GladeGui.h"  // for GladeGui
+#include "GladeGui.h"            // for GladeGui
+#include "ToolbarDefinitions.h"  // for TOOLBAR_DEFINITIONS_LEN
 
 class Control;
 class Layout;
@@ -35,14 +37,17 @@ class ToolMenuHandler;
 class ToolbarData;
 class ToolbarModel;
 class XournalView;
-class MainWindowToolbarMenu;
 class PdfFloatingToolbox;
 class FloatingToolbox;
 class GladeSearchpath;
 
+class Menubar;
+
+typedef std::array<xoj::util::WidgetSPtr, TOOLBAR_DEFINITIONS_LEN> ToolbarWidgetArray;
+
 class MainWindow: public GladeGui, public LayerCtrlListener {
 public:
-    MainWindow(GladeSearchpath* gladeSearchPath, Control* control);
+    MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkApplication* parent);
     ~MainWindow() override;
 
     // LayerCtrlListener
@@ -50,14 +55,11 @@ public:
     void rebuildLayerMenu() override;
     void layerVisibilityChanged() override;
 
-    FloatingToolbox* floatingToolbox;
-public:
     void show(GtkWindow* parent) override;
 
-    void setRecentMenu(GtkWidget* submenu);
+    void toolbarSelected(const std::string& id);
     void toolbarSelected(ToolbarData* d);
     ToolbarData* getSelectedToolbar() const;
-    [[maybe_unused]] void reloadToolbars();
 
     /**
      * These methods are only used internally and for toolbar configuration
@@ -68,7 +70,7 @@ public:
 
     void updatePageNumbers(size_t page, size_t pagecount, size_t pdfpage);
 
-    void setFontButtonFont(XojFont& font);
+    void setFontButtonFont(const XojFont& font);
     XojFont getFontButtonFont() const;
 
     void saveSidebarSize();
@@ -78,12 +80,14 @@ public:
 
     XournalView* getXournal() const;
 
+    void setMenubarVisible(bool visible);
     void setSidebarVisible(bool visible);
     void setToolbarVisible(bool visible);
 
     Control* getControl() const;
 
     PdfFloatingToolbox* getPdfToolbox() const;
+    FloatingToolbox* getFloatingToolbox() const;
 
     void updateScrollbarSidebarPosition();
 
@@ -103,13 +107,12 @@ public:
     void updateToolbarMenu();
     void updateColorscheme();
 
-    GtkWidget** getToolbarWidgets(int& length) const;
+    const ToolbarWidgetArray& getToolbarWidgets() const;
     const char* getToolbarName(GtkToolbar* toolbar) const;
 
     Layout* getLayout() const;
 
-    bool isGestureActive() const;
-
+    [[maybe_unused]] Menubar* getMenubar() const;
 
     /**
      * Disable kinetic scrolling if there is a touchscreen device that was manually mapped to another enabled input
@@ -129,7 +132,7 @@ private:
     void initHideMenu();
     static void toggleMenuBar(MainWindow* win);
 
-    void createToolbarAndMenu();
+    void createToolbar();
     static void rebindAcceleratorsMenuItem(GtkWidget* widget, gpointer user_data);
     static void rebindAcceleratorsSubMenu(GtkWidget* widget, gpointer user_data);
     static gboolean isKeyForClosure(GtkAccelKey* key, GClosure* closure, gpointer data);
@@ -153,11 +156,6 @@ private:
     static bool deleteEventCallback(GtkWidget* widget, GdkEvent* event, Control* control);
 
     /**
-     * Key is pressed
-     */
-    static bool onKeyPressCallback(GtkWidget* widget, GdkEventKey* event, MainWindow* win);
-
-    /**
      * Callback fro window states, we ned to know if the window is fullscreen
      */
     static bool windowStateEventCallback(GtkWidget* window, GdkEventWindowState* event, MainWindow* win);
@@ -176,24 +174,25 @@ private:
 private:
     Control* control;
 
-    XournalView* xournal = nullptr;
+    std::unique_ptr<XournalView> xournal;
     GtkWidget* winXournal = nullptr;
-    ScrollHandling* scrollHandling = nullptr;
+    std::unique_ptr<ScrollHandling> scrollHandling;
 
     std::atomic_bool gtkTouchscreenScrollingEnabled{true};
 
     std::unique_ptr<PdfFloatingToolbox> pdfFloatingToolBox;
+    std::unique_ptr<FloatingToolbox> floatingToolbox;
 
     // Toolbars
     std::unique_ptr<ToolMenuHandler> toolbar;
     ToolbarData* selectedToolbar = nullptr;
-    bool toolbarIntialized = false;
+
+    std::unique_ptr<Menubar> menubar;
 
     bool maximized = false;
 
-    GtkWidget** toolbarWidgets;
+    ToolbarWidgetArray toolbarWidgets;
 
-    MainWindowToolbarMenu* toolbarSelectMenu;
     GtkAccelGroup* globalAccelGroup;
 
     bool sidebarVisible = true;

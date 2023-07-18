@@ -81,6 +81,9 @@ void PenInputHandler::handleScrollEvent(InputEvent const& event) {
 auto PenInputHandler::actionStart(InputEvent const& event) -> bool {
     this->inputContext->focusWidget();
 
+    this->lastActionStartTimeStamp = event.timestamp;
+    this->sequenceStartPosition = {event.absoluteX, event.absoluteY};
+
     XojPageView* currentPage = this->getPageAtCurrentPosition(event);
     // set reference data for handling of entering/leaving page
     this->updateLastEvent(event);
@@ -117,11 +120,7 @@ auto PenInputHandler::actionStart(InputEvent const& event) -> bool {
         this->scrollStartY = event.absoluteY;
     }
 
-    // Set the reference page for selections and other single-page elements so motion events are passed to the right
-    // page everytime
-    if (toolHandler->isSinglePageTool()) {
-        this->sequenceStartPage = currentPage;
-    }
+    this->sequenceStartPage = currentPage;
 
     // hand tool don't change the selection, so you can scroll e.g. with your touchscreen without remove the selection
     if (toolHandler->getToolType() != TOOL_HAND && xournal->selection) {
@@ -266,7 +265,7 @@ auto PenInputHandler::actionMotion(InputEvent const& event) -> bool {
          * Only trigger once the new page was entered to ensure that an input device can leave the page temporarily.
          * For these events we need to fake an end point in the old page and a start point in the new page.
          */
-        if (this->deviceClassPressed && currentPage && !lastEventPage && lastHitEventPage) {
+        if (this->deviceClassPressed && currentPage && currentPage != sequenceStartPage && lastHitEventPage) {
 #ifdef DEBUG_INPUT
             g_message("PenInputHandler: Start new input on switching page...");
 #endif
@@ -300,10 +299,8 @@ auto PenInputHandler::actionMotion(InputEvent const& event) -> bool {
         PositionInputData pos = getInputDataRelativeToCurrentPage(sequenceStartPage, event);
 
         // Enforce input to stay within page
-        pos.x = std::max(0.0, pos.x);
-        pos.y = std::max(0.0, pos.y);
-        pos.x = std::min(pos.x, static_cast<double>(sequenceStartPage->getDisplayWidth()));
-        pos.y = std::min(pos.y, static_cast<double>(sequenceStartPage->getDisplayHeight()));
+        pos.x = std::clamp(pos.x, 0.0, static_cast<double>(sequenceStartPage->getDisplayWidth()));
+        pos.y = std::clamp(pos.y, 0.0, static_cast<double>(sequenceStartPage->getDisplayHeight()));
 
         pos.pressure = this->filterPressure(pos, sequenceStartPage);
 
@@ -324,6 +321,7 @@ auto PenInputHandler::actionMotion(InputEvent const& event) -> bool {
         return result;
     }
 
+    this->updateLastEvent(event);  // Update the last position of the input device
     return false;
 }
 
@@ -333,6 +331,40 @@ auto PenInputHandler::actionEnd(InputEvent const& event) -> bool {
     ToolHandler* toolHandler = inputContext->getToolHandler();
 
     cursor->setMouseDown(false);
+
+    if (toolHandler->supportsTapFilter()) {
+        auto* settings = inputContext->getSettings();
+        if (settings->getStrokeFilterEnabled()) {
+            int tapMaxDuration = 0, filterRepetitionTime = 0;
+            double tapMaxDistance = NAN;  // in mm
+
+            settings->getStrokeFilter(&tapMaxDuration, &tapMaxDistance, &filterRepetitionTime);
+
+            const double dpmm = settings->getDisplayDpi() / 25.4;
+            const double dist = std::hypot(this->sequenceStartPosition.x - event.absoluteX,
+                                           this->sequenceStartPosition.y - event.absoluteY);
+
+            const bool noMovement = dist < tapMaxDistance * dpmm;
+            const bool fastEnoughTap = event.timestamp - this->lastActionStartTimeStamp < tapMaxDuration;
+            const bool notAnAftershock = event.timestamp - this->lastActionEndTimeStamp > filterRepetitionTime;
+
+            if (noMovement && fastEnoughTap && notAnAftershock) {
+                // Cancel the sequence and trigger the necessary action
+                XojPageView* pageUnderTap =
+                        this->sequenceStartPage ? this->sequenceStartPage : getPageAtCurrentPosition(event);
+                if (pageUnderTap) {
+                    pageUnderTap->onSequenceCancelEvent();
+                    PositionInputData pos = getInputDataRelativeToCurrentPage(pageUnderTap, event);
+                    pageUnderTap->onTapEvent(pos);
+                }
+                this->sequenceStartPage = nullptr;
+                this->inputRunning = false;
+                this->lastActionEndTimeStamp = event.timestamp;
+                return false;
+            }
+        }
+    }
+    this->lastActionEndTimeStamp = event.timestamp;
 
     EditSelection* sel = xournal->view->getSelection();
     if (sel) {
@@ -373,8 +405,9 @@ auto PenInputHandler::actionEnd(InputEvent const& event) -> bool {
     xournal->selection = nullptr;
     this->sequenceStartPage = nullptr;
 
-    toolHandler->pointActiveToolToToolbarTool();
-    toolHandler->fireToolChanged();
+    if (toolHandler->pointActiveToolToToolbarTool()) {
+        toolHandler->fireToolChanged();
+    }
 
     // we need this workaround so it's possible to select something with the middle button
     if (tmpSelection) {
@@ -388,7 +421,7 @@ auto PenInputHandler::actionEnd(InputEvent const& event) -> bool {
 
 void PenInputHandler::actionPerform(InputEvent const& event) {
 #ifdef DEBUG_INPUT
-    g_message("Discrete input action; modifier1=%s, modifier2=%2", this->modifier2 ? "true" : "false",
+    g_message("Discrete input action; modifier1=%s, modifier2=%s", this->modifier2 ? "true" : "false",
               this->modifier3 ? "true" : "false");
 #endif
 

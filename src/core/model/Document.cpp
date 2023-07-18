@@ -1,6 +1,7 @@
 #include "Document.h"
 
 #include <ctime>    // for size_t, localtime, strf...
+#include <string>   // for string
 #include <utility>  // for move, pair
 
 #include <glib-object.h>  // for g_object_unref, G_TYPE_...
@@ -13,8 +14,10 @@
 #include "pdf/base/XojPdfBookmarkIterator.h"  // for XojPdfBookmarkIterator
 #include "util/PathUtil.h"                    // for clearExtensions
 #include "util/PlaceholderString.h"           // for PlaceholderString
+#include "util/SaveNameUtils.h"               // for parseFilename
 #include "util/Util.h"                        // for npos
 #include "util/i18n.h"                        // for FS, _F
+#include "util/raii/GObjectSPtr.h"            // for GObjectSPtr
 
 #include "LinkDestination.h"  // for XojLinkDest, DOCUMENT_L...
 #include "XojPage.h"          // for XojPage
@@ -29,11 +32,10 @@ Document::~Document() {
 
 void Document::freeTreeContentModel() {
     if (this->contentsModel) {
-        gtk_tree_model_foreach(this->contentsModel, reinterpret_cast<GtkTreeModelForeachFunc>(freeTreeContentEntry),
-                               this);
+        gtk_tree_model_foreach(this->contentsModel.get(),
+                               reinterpret_cast<GtkTreeModelForeachFunc>(freeTreeContentEntry), this);
 
-        g_object_unref(this->contentsModel);
-        this->contentsModel = nullptr;
+        this->contentsModel.reset();
     }
 }
 
@@ -128,27 +130,31 @@ auto Document::createSaveFolder(fs::path lastSavePath) -> fs::path {
     return lastSavePath;
 }
 
-auto Document::createSaveFilename(DocumentType type, const std::string& defaultSaveName) -> fs::path {
-    if (!filepath.empty()) {
-        // This can be any extension
-        fs::path p = filepath.filename();
-        Util::clearExtensions(p);
-        return p;
-    }
-    if (!pdfFilepath.empty()) {
-        fs::path p = pdfFilepath.filename();
-        if (this->attachPdf) {
-            Util::clearExtensions(p, ".pdf");
-        } else {
+auto Document::createSaveFilename(DocumentType type, const std::string& defaultSaveName, const std::string& defaultPdfName) -> fs::path {
+    std::string wildcardString;
+    if (type != Document::PDF) {
+        if (!filepath.empty()) {
+            // This can be any extension
+            fs::path p = filepath.filename();
             Util::clearExtensions(p);
+            return p;
         }
-        return p;
+        if (!pdfFilepath.empty()) {
+            fs::path p = pdfFilepath.filename();
+            Util::clearExtensions(p, ".pdf");
+            return p;
+        }
+    } else if (!pdfFilepath.empty()) {
+        wildcardString = SaveNameUtils::parseFilenameFromWildcardString(defaultPdfName, this->pdfFilepath.filename());
+    } else if (!filepath.empty()) {
+        wildcardString = SaveNameUtils::parseFilenameFromWildcardString(defaultPdfName, this->filepath.filename());
     }
 
+    const char* format = wildcardString.empty() ? defaultSaveName.c_str() : wildcardString.c_str();
 
     time_t curtime = time(nullptr);
     char stime[128];
-    strftime(stime, sizeof(stime), defaultSaveName.c_str(), localtime(&curtime));
+    strftime(stime, sizeof(stime), format, localtime(&curtime));
 
     // Remove the extension, file format is handled by the filter combo box
     fs::path p = stime;
@@ -199,7 +205,9 @@ void Document::buildTreeContentsModel(GtkTreeIter* parent, XojPdfBookmarkIterato
         GtkTreeIter treeIter = {0};
 
         XojPdfAction* action = iter->getAction();
-        XojLinkDest* link = action->getDestination();
+        LinkDestination* dest = new LinkDestination(*action->getDestination());
+        XojLinkDest* link = link_dest_new();
+        link->dest = dest;
 
         if (action->getTitle().empty()) {
             g_object_unref(link);
@@ -209,10 +217,10 @@ void Document::buildTreeContentsModel(GtkTreeIter* parent, XojPdfBookmarkIterato
 
         link->dest->setExpand(iter->isOpen());
 
-        gtk_tree_store_append(GTK_TREE_STORE(contentsModel), &treeIter, parent);
+        gtk_tree_store_append(GTK_TREE_STORE(contentsModel.get()), &treeIter, parent);
         char* titleMarkup = g_markup_escape_text(action->getTitle().c_str(), -1);
 
-        gtk_tree_store_set(GTK_TREE_STORE(contentsModel), &treeIter, DOCUMENT_LINKS_COLUMN_NAME, titleMarkup,
+        gtk_tree_store_set(GTK_TREE_STORE(contentsModel.get()), &treeIter, DOCUMENT_LINKS_COLUMN_NAME, titleMarkup,
                            DOCUMENT_LINKS_COLUMN_LINK, link, DOCUMENT_LINKS_COLUMN_PAGE_NUMBER, "", -1);
 
         g_free(titleMarkup);
@@ -250,13 +258,14 @@ void Document::buildContentsModel() {
         return;
     }
 
-    this->contentsModel = reinterpret_cast<GtkTreeModel*>(
-            gtk_tree_store_new(4, G_TYPE_STRING, G_TYPE_OBJECT, G_TYPE_BOOLEAN, G_TYPE_STRING));
+    this->contentsModel.reset(reinterpret_cast<GtkTreeModel*>(gtk_tree_store_new(4, G_TYPE_STRING, G_TYPE_OBJECT,
+                                                                                 G_TYPE_BOOLEAN, G_TYPE_STRING)),
+                              xoj::util::adopt);
     buildTreeContentsModel(nullptr, iter);
     delete iter;
 }
 
-auto Document::getContentsModel() const -> GtkTreeModel* { return this->contentsModel; }
+auto Document::getContentsModel() const -> GtkTreeModel* { return this->contentsModel.get(); }
 
 auto Document::fillPageLabels(GtkTreeModel* treeModel, GtkTreePath* path, GtkTreeIter* iter, Document* doc) -> bool {
     XojLinkDest* link = nullptr;
@@ -280,8 +289,9 @@ auto Document::fillPageLabels(GtkTreeModel* treeModel, GtkTreePath* path, GtkTre
 }
 
 void Document::updateIndexPageNumbers() {
-    if (this->contentsModel != nullptr) {
-        gtk_tree_model_foreach(this->contentsModel, reinterpret_cast<GtkTreeModelForeachFunc>(fillPageLabels), this);
+    if (this->contentsModel) {
+        gtk_tree_model_foreach(this->contentsModel.get(), reinterpret_cast<GtkTreeModelForeachFunc>(fillPageLabels),
+                               this);
     }
 }
 

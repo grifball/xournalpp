@@ -124,7 +124,7 @@
       </object>
     </child>
   </object>
-  <object class="GtkWindow" id="mainWindow">
+  <object class="GtkApplicationWindow" id="mainWindow">
     <property name="name">mainWindow</property>
     <property name="can-focus">False</property>
     <property name="icon">pixmaps/com.github.xournalpp.xournalpp.svg</property>
@@ -567,6 +567,7 @@
                             <property name="label" translatable="yes">_Presentation Mode</property>
                             <property name="use-underline">True</property>
                             <signal name="toggled" handler="ACTION_VIEW_PRESENTATION_MODE" swapped="no"/>
+                            <accelerator key="F5" signal="activate"/>
                           </object>
                         </child>
                         <child>
@@ -1571,6 +1572,18 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkCheckMenuItem" id="menuToolsSelectRectangle">
+                            <property name="name">menuToolsSelectRectangle</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Select Rectangle</property>
+                            <property name="use-underline">True</property>
+                            <property name="draw-as-radio">True</property>
+                            <signal name="toggled" handler="ACTION_TOOL_SELECT_RECT" swapped="no"/>
+                            <accelerator key="r" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkCheckMenuItem" id="menuToolsSelectRegion">
                             <property name="name">menuToolsSelectRegion</property>
                             <property name="visible">True</property>
@@ -1583,15 +1596,25 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkCheckMenuItem" id="menuToolsSelectRectangle">
-                            <property name="name">menuToolsSelectRectangle</property>
+                          <object class="GtkCheckMenuItem" id="menuToolsSelectMultiLayerRectangle">
+                            <property name="name">menuToolsSelectMultiLayerRectangle</property>
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
-                            <property name="label" translatable="yes">Select Rectangle</property>
+                            <property name="label" translatable="yes">Select Multi-Layer Rectangle</property>
                             <property name="use-underline">True</property>
                             <property name="draw-as-radio">True</property>
-                            <signal name="toggled" handler="ACTION_TOOL_SELECT_RECT" swapped="no"/>
-                            <accelerator key="r" signal="activate" modifiers="GDK_SHIFT_MASK | GDK_CONTROL_MASK"/>
+                            <signal name="toggled" handler="ACTION_TOOL_SELECT_MULTILAYER_RECT" swapped="no"/>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkCheckMenuItem" id="menuToolsSelectMultiLayerRegion">
+                            <property name="name">menuToolsSelectMultiLayerRegion</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Select Multi-Layer Region</property>
+                            <property name="use-underline">True</property>
+                            <property name="draw-as-radio">True</property>
+                            <signal name="toggled" handler="ACTION_TOOL_SELECT_MULTILAYER_REGION" swapped="no"/>
                           </object>
                         </child>
                         <child>
@@ -1650,6 +1673,16 @@
                             <property name="can-focus">False</property>
                             <property name="label" translatable="yes">Setsquare</property>
                             <signal name="toggled" handler="ACTION_SETSQUARE" swapped="no" />
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkCheckMenuItem" id="menuCompass">
+                            <property name="use-action-appearance">False</property>
+                            <property name="name">menuCompass</property>
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes">Compass</property>
+                            <signal name="toggled" handler="ACTION_COMPASS" swapped="no" />
                           </object>
                         </child>
                         <child>
@@ -2256,7 +2289,7 @@
                                       <object class="GtkImage" id="image8">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
-                                        <property name="stock">gtk-close</property>
+                                        <property name="icon-name">window-close</property>
                                       </object>
                                     </child>
                                     <style>
@@ -2311,7 +2344,7 @@
                                       <object class="GtkImage" id="image1">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
-                                        <property name="stock">gtk-go-up</property>
+                                        <property name="icon-name">go-up</property>
                                       </object>
                                     </child>
                                   </object>
@@ -2331,7 +2364,7 @@
                                       <object class="GtkImage" id="image5">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
-                                        <property name="stock">gtk-go-down</property>
+                                        <property name="icon-name">go-down</property>
                                       </object>
                                     </child>
                                   </object>
@@ -2351,7 +2384,7 @@
                                       <object class="GtkImage" id="image6">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
-                                        <property name="stock">gtk-copy</property>
+                                        <property name="icon-name">edit-copy</property>
                                       </object>
                                     </child>
                                   </object>
@@ -2371,7 +2404,7 @@
                                       <object class="GtkImage" id="image7">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
-                                        <property name="stock">gtk-delete</property>
+                                        <property name="icon-name">edit-delete</property>
                                       </object>
                                     </child>
                                   </object>
@@ -2523,7 +2556,7 @@
                                   <object class="GtkImage" id="image3">
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
-                                    <property name="stock">gtk-go-up</property>
+                                    <property name="icon-name">go-up</property>
                                   </object>
                                 </child>
                               </object>
@@ -2545,7 +2578,7 @@
                                   <object class="GtkImage" id="image4">
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
-                                    <property name="stock">gtk-go-down</property>
+                                    <property name="icon-name">go-down</property>
                                   </object>
                                 </child>
                               </object>
@@ -2603,7 +2636,7 @@
                               <object class="GtkImage" id="image2">
                                 <property name="visible">True</property>
                                 <property name="can-focus">False</property>
-                                <property name="stock">gtk-close</property>
+                                <property name="icon-name">window-close</property>
                               </object>
                             </child>
                             <style>

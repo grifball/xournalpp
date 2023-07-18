@@ -11,6 +11,7 @@
 #include "control/settings/Settings.h"              // for Settings
 #include "util/Color.h"                             // for Color
 #include "util/i18n.h"                              // for _
+#include "util/raii/CairoWrappers.h"                // for CairoSurfaceSPtr
 #include "view/background/BackgroundView.h"         // for BackgroundView
 
 #include "PageTypeHandler.h"  // for PageTypeInfo, Pag...
@@ -77,8 +78,8 @@ void PageTypeMenu::addMenuEntry(PageTypeInfo* t) {
 
     GtkWidget* entry = nullptr;
     if (showImg) {
-        cairo_surface_t* img = createPreviewImage(t->page);
-        GtkWidget* preview = gtk_image_new_from_surface(img);
+        xoj::util::raii::CairoSurfaceSPtr img(createPreviewImage(t->page), xoj::util::adopt);
+        GtkWidget* preview = gtk_image_new_from_surface(img.get());
         entry = gtk_check_menu_item_new();
 
         GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
@@ -149,6 +150,11 @@ void PageTypeMenu::entrySelected(PageTypeInfo* t) {
     if (listener != nullptr) {
         listener->changeCurrentPageBackground(t);
     }
+
+    // Disable "Apply to current page" if current format is "Copy."
+    if (this->menuEntryApply) {
+        gtk_widget_set_sensitive(this->menuEntryApply, t->page.format != PageTypeFormat::Copy);
+    }
 }
 
 void PageTypeMenu::setSelected(const PageType& selected) {
@@ -176,6 +182,11 @@ void PageTypeMenu::hideCopyPage() {
  */
 void PageTypeMenu::addApplyBackgroundButton(PageTypeApplyListener* pageTypeApplyListener, bool onlyAllMenu,
                                             ApplyPageTypeSource ptSource) {
+    if (this->menuEntryApply) {
+        g_warning("Button 'Apply to current page' already exists!");
+        return;
+    }
+
     this->pageTypeApplyListener = pageTypeApplyListener;
     this->pageTypeSource = ptSource;
 
@@ -186,13 +197,17 @@ void PageTypeMenu::addApplyBackgroundButton(PageTypeApplyListener* pageTypeApply
     menuY++;
 
     if (!onlyAllMenu) {
-        GtkWidget* menuEntryApply = createApplyMenuItem(_("Apply to current page"));
+        this->menuEntryApply = createApplyMenuItem(_("Apply to current page"));
         gtk_menu_attach(GTK_MENU(menu), menuEntryApply, 0, PREVIEW_COLUMNS, menuY, menuY + 1);
         menuY++;
         g_signal_connect(menuEntryApply, "activate", G_CALLBACK(+[](GtkWidget* menu, PageTypeMenu* self) {
                              self->pageTypeApplyListener->applySelectedPageBackground(false, self->pageTypeSource);
                          }),
                          this);
+        // Do not initially activate this option if the "Copy" format is selected
+        if (getSelected().format == PageTypeFormat::Copy) {
+            gtk_widget_set_sensitive(menuEntryApply, false);
+        }
     }
 
     GtkWidget* menuEntryApplyAll = createApplyMenuItem(_("Apply to all pages"));

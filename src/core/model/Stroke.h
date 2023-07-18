@@ -108,9 +108,6 @@ public:
     void setFill(int fill);
 
     void addPoint(const Point& p);
-    void setLastPoint(double x, double y);
-    void setFirstPoint(double x, double y);
-    void setLastPoint(const Point& p);
     int getPointCount() const;
     void freeUnusedPointItems();
     std::vector<Point> const& getPointVector() const;
@@ -132,7 +129,6 @@ private:
     void setPointVectorInternal(const Range* const snappingBox);
 
 public:
-    void deletePoint(int index);
     void deletePointsFrom(size_t index);
 
     void setToolType(StrokeTool type);
@@ -166,6 +162,11 @@ public:
     void setSecondToLastPressure(double pressure);
     void clearPressure();
     void scalePressure(double factor);
+
+    /**
+     * @brief Update the stroke's bounding box using the second-to-last point's pressure value and the last two points.
+     */
+    void updateBoundsLastTwoPressures();
 
     bool hasPressure() const;
     double getAvgPressure() const;

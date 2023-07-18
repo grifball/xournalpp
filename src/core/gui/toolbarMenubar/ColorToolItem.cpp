@@ -3,6 +3,7 @@
 #include <array>    // for array
 #include <cstdio>   // for snprintf, size_t
 #include <memory>   // for unique_ptr
+#include <sstream>  // for ostringstream
 #include <utility>  // for move
 
 #include <glib.h>  // for gchar
@@ -20,17 +21,13 @@ bool ColorToolItem::inUpdate = false;
 ColorToolItem::~ColorToolItem() = default;
 
 ColorToolItem::ColorToolItem(ActionHandler* handler, ToolHandler* toolHandler, GtkWindow* parent, NamedColor namedColor,
-                             bool selektor):
-        AbstractToolItem("", handler, selektor ? ACTION_SELECT_COLOR_CUSTOM : ACTION_SELECT_COLOR),
+                             bool selector):
+        AbstractToolItem("", handler, selector ? ACTION_SELECT_COLOR_CUSTOM : ACTION_SELECT_COLOR),
         namedColor{std::move(namedColor)},
+        parent(parent),
         toolHandler(toolHandler) {
     this->group = GROUP_COLOR;
 }
-
-/**
- * Free the allocated icons
- */
-void ColorToolItem::freeIcons() { this->icon.reset(); }
 
 auto ColorToolItem::isSelector() const -> bool { return this->action == ACTION_SELECT_COLOR_CUSTOM; }
 
@@ -70,12 +67,9 @@ auto ColorToolItem::getId() const -> std::string {
         return "COLOR_SELECT";
     }
 
-    // Todo (modernize, cpp20): use std::format or fmtlibs fmt::format
-    std::array<char, 64> buffer{'\0'};
-    auto size = snprintf(buffer.data(), buffer.size(), "COLOR(%zu)", this->namedColor.getIndex());
-    std::string id = {buffer.data(), static_cast<size_t>(size)};
-
-    return id;
+    std::ostringstream os;
+    os << "COLOR(" << this->namedColor.getIndex() << ")";
+    return os.str();
 }
 
 /**
@@ -85,9 +79,11 @@ void ColorToolItem::showColorchooser() {
     GtkWidget* dialog = gtk_color_chooser_dialog_new(_("Select color"), parent);
     gtk_color_chooser_set_use_alpha(GTK_COLOR_CHOOSER(dialog), false);
 
+    GdkRGBA color = Util::argb_to_GdkRGBA(getColor(), 1.0);
+    gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(dialog), &color);
+
     int response = gtk_dialog_run(GTK_DIALOG(dialog));
     if (response == GTK_RESPONSE_OK) {
-        GdkRGBA color;
         gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(dialog), &color);
         this->namedColor = NamedColor{Util::GdkRGBA_to_argb(color)};
     }

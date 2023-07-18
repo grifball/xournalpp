@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cassert>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace xoj::util {
@@ -34,7 +35,7 @@ template <class ListenerT>
 class DispatchPool final {
 public:
     using listener_type = ListenerT;
-    
+
     /**
      * @brief Invokes the `on()` method of all registered `ListenerT`s.
      */
@@ -79,6 +80,7 @@ public:
     }
 
     [[nodiscard]] bool empty() const { return pool.empty(); }
+    [[nodiscard]] const listener_type& front() const { return *pool.front(); }
 
 private:
     std::vector<listener_type*> pool;

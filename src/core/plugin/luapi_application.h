@@ -11,7 +11,9 @@
 #pragma once
 
 #include <climits>
+#include <cmath>  // for rounding
 #include <cstring>
+#include <limits>  // for numeric_limits
 #include <map>
 
 #include <gtk/gtk.h>
@@ -26,6 +28,7 @@
 #include "control/pagetype/PageTypeHandler.h"
 #include "control/settings/Settings.h"
 #include "control/tools/EditSelection.h"
+#include "control/tools/ImageHandler.h"
 #include "gui/Layout.h"
 #include "gui/MainWindow.h"
 #include "gui/XournalView.h"
@@ -52,6 +55,17 @@ extern "C" {
 #include <lualib.h>   // for luaL_openlibs
 }
 
+/*
+ * Code conventions:
+ *     Error handling:
+ *         luapi functions should call `return luaL_error(L, fmt, ...)` if
+ *         something *unexpected happens* (e.g. wrong arguments). This throws a
+ *         real lua error.
+ *         They may also `return nil, errorMessage`. This behavior is reserved for
+ *         things that are *expected to happen* (e.g. ressource is not
+ *         available).
+*/
+
 /**
  * Renames file 'from' to file 'to' in the file system.
  * Overwrites 'to' if it already exists.
@@ -66,12 +80,10 @@ extern "C" {
  */
 static int applib_glib_rename(lua_State* L) {
     GError* err = nullptr;
-    GFile* to = g_file_new_for_path(lua_tostring(L, -1));
-    GFile* from = g_file_new_for_path(lua_tostring(L, -2));
+    xoj::util::GObjectSPtr<GFile> to(g_file_new_for_path(lua_tostring(L, -1)), xoj::util::adopt);
+    xoj::util::GObjectSPtr<GFile> from(g_file_new_for_path(lua_tostring(L, -2)), xoj::util::adopt);
 
-    g_file_move(from, to, G_FILE_COPY_OVERWRITE, nullptr, nullptr, nullptr, &err);
-    g_object_unref(from);
-    g_object_unref(to);
+    g_file_move(from.get(), to.get(), G_FILE_COPY_OVERWRITE, nullptr, nullptr, nullptr, &err);
     if (err) {
         lua_pushnil(L);
         lua_pushfstring(L, "%s (error code: %d)", err->message, err->code);
@@ -93,35 +105,33 @@ static int applib_glib_rename(lua_State* L) {
  *   local filename = app.saveAs("foo") -- suggests "foo" as filename
  */
 static int applib_saveAs(lua_State* L) {
-    GtkFileChooserNative* native;
     gint res;
     int args_returned = 0;  // change to 1 if user chooses file
 
     const char* filename = luaL_checkstring(L, -1);
 
     // Create a 'Save As' native dialog
-    native = gtk_file_chooser_native_new(_("Save file"), nullptr, GTK_FILE_CHOOSER_ACTION_SAVE, nullptr, nullptr);
+    xoj::util::GObjectSPtr<GtkFileChooserNative> native(
+            gtk_file_chooser_native_new(_("Save file"), nullptr, GTK_FILE_CHOOSER_ACTION_SAVE, nullptr, nullptr),
+            xoj::util::adopt);
 
     // If user tries to overwrite a file, ask if it's OK
-    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(native), TRUE);
+    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(native.get()), TRUE);
     // Offer a suggestion for the filename if filename absent
-    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(native),
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(native.get()),
                                       filename ? filename : (std::string{_("Untitled")}).c_str());
 
     // Wait until user responds to dialog
-    res = gtk_native_dialog_run(GTK_NATIVE_DIALOG(native));
+    res = gtk_native_dialog_run(GTK_NATIVE_DIALOG(native.get()));
 
     // Return the filename chosen to lua
     if (res == GTK_RESPONSE_ACCEPT) {
-        char* filename = static_cast<char*>(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native)));
+        char* filename = static_cast<char*>(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native.get())));
 
         lua_pushlstring(L, filename, strlen(filename));
         g_free(static_cast<gchar*>(filename));
         args_returned = 1;
     }
-
-    // Destroy the dialog and free memory
-    g_object_unref(native);
 
     return args_returned;
 }
@@ -135,8 +145,9 @@ static int applib_saveAs(lua_State* L) {
  *   path = app.getFilePath({'*.bmp', '*.png'})
  */
 static int applib_getFilePath(lua_State* L) {
-    GtkFileChooserNative* native =
-            gtk_file_chooser_native_new(_("Open file"), nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, nullptr, nullptr);
+    xoj::util::GObjectSPtr<GtkFileChooserNative> native(
+            gtk_file_chooser_native_new(_("Open file"), nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, nullptr, nullptr),
+            xoj::util::adopt);
     gint res;
     int args_returned = 0;  // change to 1 if user chooses file
     char* filename;
@@ -159,20 +170,19 @@ static int applib_getFilePath(lua_State* L) {
         GtkFileFilter* filterSupported = gtk_file_filter_new();
         gtk_file_filter_set_name(filterSupported, _("Supported files"));
         for (std::string format: formats) gtk_file_filter_add_pattern(filterSupported, format.c_str());
-        gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(native), filterSupported);
+        gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(native.get()), filterSupported);
     }
 
     // Wait until user responds to dialog
-    res = gtk_native_dialog_run(GTK_NATIVE_DIALOG(native));
+    res = gtk_native_dialog_run(GTK_NATIVE_DIALOG(native.get()));
     // Return the filename chosen to lua
     if (res == GTK_RESPONSE_ACCEPT) {
-        filename = static_cast<char*>(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native)));
+        filename = static_cast<char*>(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native.get())));
         lua_pushlstring(L, filename, strlen(filename));
         g_free(static_cast<gchar*>(filename));
         args_returned = 1;
     }
     // Destroy the dialog and free memory
-    g_object_unref(native);
     return args_returned;
 }
 
@@ -208,11 +218,16 @@ static int applib_msgbox(lua_State* L) {
 
 
 /**
- * Allow to register menupoints, this needs to be called from initUi
+ * Allow to register menupoints and toolbar buttons. This needs to be called from initUi
  *
- * Example: app.registerUi({["menu"] = "HelloWorld", callback="printMessage", mode=1, accelerator="<Control>a"})
+ * Example 1: app.registerUi({["menu"] = "HelloWorld", callback="printMessage", mode=1, accelerator="<Control>a"})
  * registers a menupoint with name "HelloWorld" executing a function named "printMessage", in mode 1,
  * which can be triggered via the "<Control>a" keyboard accelerator
+ *
+ * Example 2: app.registerUi({callback ="blueDashedPen", toolbarId="CUSTOM_PEN_1", iconName="bluePenIcon"})
+ * registers a toolbar icon named "bluePenIcon" executing a function named "blueDashedPen", which can be added
+ * to a toolbar via toolbar customization or by editing the toolbar.ini file using the name "Plugin::CUSTOM_PEN_1"
+ * Note that in toolbar.ini the string "Plugin::" must always be prepended to the toolbarId specified in the plugin
  *
  * The mode and accelerator are optional. When specifying the mode, the callback function should have one parameter
    that receives the mode. This is useful for callback functions that are shared among multiple menu entries.
@@ -220,7 +235,7 @@ static int applib_msgbox(lua_State* L) {
 static int applib_registerUi(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     if (!plugin->isInInitUi()) {
-        luaL_error(L, "registerUi needs to be called within initUi()");
+        return luaL_error(L, "registerUi needs to be called within initUi()");
     }
 
     // discard any extra arguments passed in
@@ -235,33 +250,32 @@ static int applib_registerUi(lua_State* L) {
     lua_getfield(L, 1, "menu");
     lua_getfield(L, 1, "callback");
     lua_getfield(L, 1, "mode");
-    // stack now has following:
+    lua_getfield(L, 1, "toolbarId");
+    lua_getfield(L, 1, "iconName");
+    // In Example 1 stack now has following:
     //    1 = {"menu"="MenuName", callback="functionName", mode=1, accelerator="<Control>a"}
-    //   -4 = "<Control>a"
-    //   -3 = "MenuName"
-    //   -2 = "functionName"
-    //   -1 = mode
+    //   -6 = "<Control>a"
+    //   -5 = "MenuName"
+    //   -4 = "functionName"
+    //   -3 = mode
+    //   -2 = nil
+    //   -1 = nil
 
-    const char* accelerator = luaL_optstring(L, -4, nullptr);
-    const char* menu = luaL_optstring(L, -3, nullptr);
-    const char* callback = luaL_optstring(L, -2, nullptr);
-    const long mode = luaL_optinteger(L, -1, LONG_MAX);
+    const char* accelerator = luaL_optstring(L, -6, "");
+    const char* menu = luaL_optstring(L, -5, "");
+    const char* callback = luaL_optstring(L, -4, nullptr);
+    const long mode = luaL_optinteger(L, -3, std::numeric_limits<long>::max());
+    const char* toolbarId = luaL_optstring(L, -2, "");
+    const char* iconName = luaL_optstring(L, -1, "");
     if (callback == nullptr) {
-        luaL_error(L, "Missing callback function!");
+        return luaL_error(L, "Missing callback function!");
     }
-    if (menu == nullptr) {
-        menu = "";
-    }
-    if (accelerator == nullptr) {
-        accelerator = "";
-    }
-
-    int toolbarId = -1;
 
     int menuId = plugin->registerMenu(menu, callback, mode, accelerator);
+    plugin->registerToolButton(menu, toolbarId, iconName, callback, mode);
 
     // Make sure to remove all vars which are put to the stack before!
-    lua_pop(L, 4);
+    lua_pop(L, 6);
 
     // Add return value to the Stack
     lua_createtable(L, 0, 2);
@@ -269,10 +283,6 @@ static int applib_registerUi(lua_State* L) {
     lua_pushstring(L, "menuId");
     lua_pushinteger(L, menuId);
     lua_settable(L, -3); /* 3rd element from the stack top */
-
-    lua_pushstring(L, "toolbarId");
-    lua_pushinteger(L, toolbarId);
-    lua_settable(L, -3);
 
     return 1;
 }
@@ -319,7 +329,7 @@ static int applib_uiAction(lua_State* L) {
 
     const char* actionStr = luaL_optstring(L, -1, nullptr);
     if (actionStr == nullptr) {
-        luaL_error(L, "Missing action!");
+        return luaL_error(L, "Missing action!");
     }
 
     ActionType action = ActionType_fromString(actionStr);
@@ -374,11 +384,11 @@ static int applib_sidebarAction(lua_State* L) {
     };
     const char* actionStr = luaL_checkstring(L, 1);
     if (actionStr == nullptr) {
-        luaL_error(L, "Missing action!");
+        return luaL_error(L, "Missing action!");
     }
     auto pos = actionMap.find(actionStr);
     if (pos == actionMap.end()) {
-        luaL_error(L, "Unkonwn action: %s", actionStr);
+        return luaL_error(L, "Unknown action: %s", actionStr);
     }
     Plugin* plugin = Plugin::getPluginFromLua(L);
     SidebarToolbar* toolbar = plugin->getControl()->getSidebar()->getToolbar();
@@ -403,6 +413,34 @@ static int applib_layerAction(lua_State* L) {
 
     return 1;
 }
+
+/**
+ * Helper function to handle a allowUndoRedoAction string parameter. allowUndoRedoAction can take the following values:
+ * - "grouped": the elements get a single undo-redo-action
+ * - "individual" each of the elements get an own undo-redo-action
+ * - "none": no undo-redo-action will be inserted
+ * if an invalid value is being passed as allowUndoRedoAction this function errors
+ */
+static int handleUndoRedoActionHelper(lua_State* L, Control* control, const char* allowUndoRedoAction,
+                                      const std::vector<Element*>& elements) {
+    if (strcmp("grouped", allowUndoRedoAction) == 0) {
+        PageRef const& page = control->getCurrentPage();
+        Layer* layer = page->getSelectedLayer();
+        UndoRedoHandler* undo = control->getUndoRedoHandler();
+        undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, elements));
+    } else if (strcmp("individual", allowUndoRedoAction) == 0) {
+        PageRef const& page = control->getCurrentPage();
+        Layer* layer = page->getSelectedLayer();
+        UndoRedoHandler* undo = control->getUndoRedoHandler();
+        for (Element* element: elements) undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, element));
+    } else if (strcmp("none", allowUndoRedoAction) == 0)
+        g_warning("Not allowing undo/redo action.");
+    else {
+        return luaL_error(L, "Unrecognized undo/redo option: %s", allowUndoRedoAction);
+    }
+    return 0;
+}
+
 
 /**
  * Helper function for addStroke API. Parses pen settings from API call, taking
@@ -556,7 +594,7 @@ static int applib_addSplines(lua_State* L) {
 
     lua_getfield(L, 1, "splines");
     if (!lua_istable(L, -1))
-        luaL_error(L, "Missing spline table!");
+        return luaL_error(L, "Missing spline table!");
 
     size_t numSplines = lua_rawlen(L, -1);
     for (size_t a = 1; a <= numSplines; a++) {
@@ -567,7 +605,7 @@ static int applib_addSplines(lua_State* L) {
         lua_gettable(L, -2);
         lua_getfield(L, -1, "coordinates");
         if (!lua_istable(L, -1))
-            luaL_error(L, "Missing coordinate table!");
+            return luaL_error(L, "Missing coordinate table!");
         size_t numCoords = lua_rawlen(L, -1);
         for (size_t b = 1; b <= numCoords; b++) {
             lua_pushnumber(L, b);
@@ -581,7 +619,7 @@ static int applib_addSplines(lua_State* L) {
         // Handle those points
         // Check if the list is divisible by 8.
         if (coordStream.size() % 8 != 0)
-            luaL_error(L, "Point table incomplete!");
+            return luaL_error(L, "Point table incomplete!");
 
         // Now take that gigantic list of splines and create SplineSegments out of them.
         long unsigned int i = 0;
@@ -602,8 +640,9 @@ static int applib_addSplines(lua_State* L) {
             // Finish building the Stroke and apply it to the layer.
             addStrokeHelper(L, stroke);
             strokes.push_back(stroke);
-        } else
+        } else {
             g_warning("Stroke shorter than two points. Discarding. (Has %d)", stroke->getPointCount());
+        }
         // Onto the next stroke
         lua_pop(L, 1);
     }
@@ -613,21 +652,8 @@ static int applib_addSplines(lua_State* L) {
     // Check how the user wants to handle undoing
     lua_getfield(L, 1, "allowUndoRedoAction");
     allowUndoRedoAction = luaL_optstring(L, -1, "grouped");
-    if (strcmp("grouped", allowUndoRedoAction) == 0) {
-        PageRef const& page = ctrl->getCurrentPage();
-        Layer* layer = page->getSelectedLayer();
-        UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
-        undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, strokes));
-    } else if (strcmp("individual", allowUndoRedoAction) == 0) {
-        PageRef const& page = ctrl->getCurrentPage();
-        Layer* layer = page->getSelectedLayer();
-        UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
-        for (Element* element: strokes) undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, element));
-    } else if (strcmp("none", allowUndoRedoAction) == 0)
-        g_warning("Not allowing undo/redo action.");
-    else
-        g_warning("Unrecognized undo/redo option: %s", allowUndoRedoAction);
     lua_pop(L, 1);
+    handleUndoRedoActionHelper(L, ctrl, allowUndoRedoAction, strokes);
     return 0;
 }
 
@@ -699,7 +725,7 @@ static int applib_addStrokes(lua_State* L) {
 
     lua_getfield(L, 1, "strokes");
     if (!lua_istable(L, -1))
-        luaL_error(L, "Missing stroke table!");
+        return luaL_error(L, "Missing stroke table!");
     size_t numStrokes = lua_rawlen(L, -1);
     for (size_t a = 1; a <= numStrokes; a++) {
         std::vector<double> xStream;
@@ -713,7 +739,7 @@ static int applib_addStrokes(lua_State* L) {
 
         lua_getfield(L, -1, "x");
         if (!lua_istable(L, -1))
-            luaL_error(L, "Missing X-Coordinate table!");
+            return luaL_error(L, "Missing X-Coordinate table!");
         size_t xPoints = lua_rawlen(L, -1);
         for (size_t b = 1; b <= xPoints; b++) {
             lua_pushnumber(L, b);
@@ -727,7 +753,7 @@ static int applib_addStrokes(lua_State* L) {
         // Fetch table of Y values form the Lua stack
         lua_getfield(L, -1, "y");
         if (!lua_istable(L, -1))
-            luaL_error(L, "Missing Y-Coordinate table!");
+            return luaL_error(L, "Missing Y-Coordinate table!");
         size_t yPoints = lua_rawlen(L, -1);
         for (size_t b = 1; b <= yPoints; b++) {
             lua_pushnumber(L, b);
@@ -749,18 +775,17 @@ static int applib_addStrokes(lua_State* L) {
                 pressureStream.push_back(value);
                 lua_pop(L, 1);
             }
-        } else
-            g_warning("Missing pressure table. Assuming NO_PRESSURE.");
+        }
 
         lua_pop(L, 1);
 
         // Handle those points
         // Make sure all vectors are the same length.
         if (xStream.size() != yStream.size()) {
-            luaL_error(L, "X and Y vectors are not equal length!");
+            return luaL_error(L, "X and Y vectors are not equal length!");
         }
         if (xStream.size() != pressureStream.size() && pressureStream.size() > 0)
-            luaL_error(L, "Pressure vector is not equal length!");
+            return luaL_error(L, "Pressure vector is not equal length!");
 
         // Check and make sure there's enough points (need at least 2)
         if (xStream.size() < 2) {
@@ -803,7 +828,7 @@ static int applib_addStrokes(lua_State* L) {
     } else if (strcmp("none", allowUndoRedoAction) == 0)
         g_warning("Not allowing undo/redo action.");
     else
-        g_warning("Unrecognized undo/redo option: %s", allowUndoRedoAction);
+        return luaL_error(L, "Unrecognized undo/redo option: %s", allowUndoRedoAction);
 
     lua_pop(L, 1);  // Stack is now the same as it was on entry to this function
 
@@ -858,7 +883,7 @@ static int applib_getStrokes(lua_State* L) {
     std::vector<Element*> elements = {};
     Control* control = plugin->getControl();
 
-    if (type == "Layer") {
+    if (type == "layer") {
         auto sel = control->getWindow()->getXournal()->getSelection();
         if (sel) {
             control->clearSelection();  // otherwise strokes in the selection won't be recognized
@@ -869,12 +894,10 @@ static int applib_getStrokes(lua_State* L) {
         if (sel) {
             elements = sel->getElements();
         } else {
-            g_warning("There is no selection! ");
-            return 0;
+            return luaL_error(L, "There is no selection! ");
         }
     } else {
-        g_warning("Unknown argument: %s", type.c_str());
-        return 0;
+        return luaL_error(L, "Unknown argument: %s", type.c_str());
     }
 
     lua_newtable(L);  // create table of the elements
@@ -919,11 +942,12 @@ static int applib_getStrokes(lua_State* L) {
             StrokeTool tool = s->getToolType();
             if (tool == StrokeTool::PEN) {
                 lua_pushstring(L, "pen");
+            } else if (tool == StrokeTool::ERASER) {
+                lua_pushstring(L, "eraser");
             } else if (tool == StrokeTool::HIGHLIGHTER) {
                 lua_pushstring(L, "highlighter");
             } else {
-                g_warning("Unknown STROKE_TOOL. ");
-                return 0;
+                return luaL_error(L, "Unknown StrokeTool::Value.");
             }
             lua_setfield(L, -2, "tool");  // add tool to stroke
 
@@ -958,7 +982,7 @@ static int applib_refreshPage(lua_State* L) {
     if (page)
         page->firePageChanged();
     else
-        g_warning("Called applib_refreshPage, but there is no current page.");
+        return luaL_error(L, "Called applib_refreshPage, but there is no current page.");
     return 0;
 }
 
@@ -1016,9 +1040,9 @@ static int applib_changeToolColor(lua_State* L) {
     if (lua_isboolean(L, -3)) {
         selection = lua_toboolean(L, -3);
     } else if (!lua_isnil(L, -3)) {
-        g_warning(""
-                  "selection"
-                  " key should be a boolean value (or nil)");
+        return luaL_error(L, ""
+                             "selection"
+                             " key should be a boolean value (or nil)");
     }
 
     ToolType toolType = toolHandler->getToolType();
@@ -1028,22 +1052,21 @@ static int applib_changeToolColor(lua_State* L) {
     }
 
     if (toolType == TOOL_NONE) {
-        g_warning("tool \"%s\" is not valid or no tool has been selected", toolTypeToString(toolType).c_str());
         lua_pop(L, 3);
-        return 0;
+        return luaL_error(L, "tool \"%s\" is not valid or no tool has been selected",
+                          toolTypeToString(toolType).c_str());
     }
 
     uint32_t color = 0x000000;
     if (lua_isinteger(L, -1)) {
         color = as_unsigned(lua_tointeger(L, -1));
         if (color > 0xffffff) {
-            g_warning("Color 0x%x is no valid RGB color. ", color);
-            return 0;
+            return luaL_error(L, "Color 0x%x is no valid RGB color. ", color);
         }
     } else if (!lua_isnil(L, -1)) {
-        g_warning(" "
-                  "color"
-                  " key should be an RGB hex code in the form 0xRRGGBB (or nil)");
+        return luaL_error(L, " "
+                             "color"
+                             " key should be an RGB hex code in the form 0xRRGGBB (or nil)");
     }
 
     Tool& tool = toolHandler->getTool(toolType);
@@ -1054,7 +1077,7 @@ static int applib_changeToolColor(lua_State* L) {
         if (selection)
             ctrl->changeColorOfSelection();
     } else {
-        g_warning("tool \"%s\" has no color capability", toolTypeToString(toolType).c_str());
+        return luaL_error(L, "tool \"%s\" has no color capability", toolTypeToString(toolType).c_str());
     }
 
     // Make sure to remove all vars which are put to the stack before!
@@ -1088,7 +1111,7 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
     PageRef const& page = control->getCurrentPage();
 
     if (!page) {
-        luaL_error(L, "No page!");
+        return luaL_error(L, "No page!");
     }
 
     size_t selected = nr - 1;
@@ -1097,7 +1120,7 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
         if (isPdf) {
             selected = page->getPdfPageNr() + nr;
         } else {
-            luaL_error(L, "Current page has no pdf background, cannot use relative mode!");
+            return luaL_error(L, "Current page has no pdf background, cannot use relative mode!");
         }
     }
     if (selected < doc->getPdfPageCount()) {
@@ -1107,7 +1130,7 @@ static int applib_changeBackgroundPdfPageNr(lua_State* L) {
         XojPdfPageSPtr p = doc->getPdfPage(selected);
         page->setSize(p->getWidth(), p->getHeight());
     } else {
-        luaL_error(L, "Pdf page number %d does not exist!", selected + 1);
+        return luaL_error(L, "Pdf page number %d does not exist!", selected + 1);
     }
 
     return 1;
@@ -1439,8 +1462,7 @@ static int applib_getToolInfo(lua_State* L) {
     } else if (strcmp(mode, "selection") == 0) {
         auto sel = control->getWindow()->getXournal()->getSelection();
         if (!sel) {
-            g_warning("There is no selection! ");
-            return 0;
+            return luaL_error(L, "There is no selection! ");
         }
         auto rect = sel->getRect();
 
@@ -1700,7 +1722,7 @@ static int applib_setPageSize(lua_State* L) {
     PageRef const& page = control->getCurrentPage();
 
     if (!page) {
-        luaL_error(L, "No page!");
+        return luaL_error(L, "No page!");
     }
 
     double width = luaL_checknumber(L, 1);
@@ -1747,14 +1769,14 @@ static int applib_setCurrentLayer(lua_State* L) {
     PageRef const& page = control->getCurrentPage();
 
     if (!page) {
-        luaL_error(L, "No page!");
+        return luaL_error(L, "No page!");
     }
 
     size_t layerCount = page->getLayerCount();
     size_t layerId = luaL_checkinteger(L, 1);
 
     if (layerId > layerCount) {
-        luaL_error(L, "No layer with layer ID %d", layerId);
+        return luaL_error(L, "No layer with layer ID %d", layerId);
     }
 
     bool update = false;
@@ -1817,7 +1839,7 @@ static int applib_setBackgroundName(lua_State* L) {
     PageRef const& page = control->getCurrentPage();
 
     if (!page) {
-        luaL_error(L, "No page!");
+        return luaL_error(L, "No page!");
     }
 
     if (lua_isstring(L, 1)) {
@@ -1921,7 +1943,7 @@ static int applib_export(lua_State* L) {
     }
 
     if (outputFile == nullptr) {
-        luaL_error(L, "Missing output file!");
+        return luaL_error(L, "Missing output file!");
     }
 
     fs::path file = fs::path(outputFile);
@@ -1972,6 +1994,192 @@ static int applib_openFile(lua_State* L) {
 }
 
 /*
+ * Adds images from the provided paths on the current page on the current layer.
+ *
+ * Global parameters:
+ *  - images table: array of image-parameter-tables
+ *  - allowUndoRedoAction string: Decides how the change gets introduced into the undoRedo action list "individual",
+ *    "grouped" or "none"
+ *
+ * Parameters per image:
+ *  - path string: filepath to the image (required)
+ *  - x number: x-Coordinate where to place the left upper corner of the image (default: 0)
+ *  - y number: y-Coordinate where to place the left upper corner of the image (default: 0)
+ *  scaling options:
+ *  - maxWidth integer: sets the width of the image in pixels. If that is too large for the page the image gets scaled
+ *    down keeping the aspect-ratio provided by maxWidth/maxHeight (default: -1)
+ *  - maxHeight integer: sets the height of the image in pixels. If that is too large for the page the image gets scaled
+ *    down keeping the aspect-ratio provided by maxWidth/maxHeight (default: -1)
+ *  - aspectRatio boolean: should the image be scaled in the other dimension to preserve the aspect ratio? Is only set
+ *    to false if the parameter is false, nil leads to the default value of true (default: true)
+ *  - scale number: factor to apply to the both dimensions in the end after setting width/height (with/without
+ *    keeping aspect ratio) (default: 1)
+ *
+ * Note about scaling:
+ * If the maxHeight-, the maxWidth- as well as the aspectRatio-parameter are given, the image will fit into the
+ * rectangle specified with maxHeight/maxWidth. To preserve the aspect ratio, one dimension will be smaller than
+ * specified. Still, the scale parameter is applied after this width/height scaling and if after that the dimensions are
+ * too large for the page, the image still gets scaled down afterwards.
+ *
+ * Returns as many values as images were passed. A nil value represents success, while
+ * on error the value corresponding to the image will be a string with the error message.
+ * If the parameters don't fit at all, a real lua error might be thrown immediately.
+ *
+ * Example: app.addImagesFromFilepath{images={{path="/media/data/myImg.png", x=10, y=20, scale=2},
+ *                                            {path="/media/data/myImg2.png", maxHeight=300, aspectRatio=true}},
+ *                                    allowUndoRedoAction="grouped",
+ *                                            }
+ */
+static int applib_addImagesFromFilepath(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* control = plugin->getControl();
+
+    // Discard any extra arguments passed in
+    lua_settop(L, 1);
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    lua_getfield(L, 1, "images");
+    if (!lua_istable(L, 2)) {
+        return luaL_error(L, "Missing image table!");
+    }
+
+    size_t cntParams = lua_rawlen(L, 2);
+
+    std::vector<Element*> images{};
+    for (int imgParam{1}; imgParam <= cntParams; imgParam++) {
+
+        lua_pushnumber(L, imgParam);
+        lua_gettable(L, 2);
+        luaL_checktype(L, -1, LUA_TTABLE);
+
+        lua_getfield(L, -1, "path");
+        lua_getfield(L, -2, "x");
+        lua_getfield(L, -3, "y");
+        lua_getfield(L, -4, "maxWidth");
+        lua_getfield(L, -5, "maxHeight");
+        lua_getfield(L, -6, "scale");
+        lua_getfield(L, -7, "aspectRatio");
+
+        // stack now has the following:
+        //    1 = global params table
+        //   -8 = current img-params table
+        //   -7 = filepath
+        //   -6 = x coordinate
+        //   -5 = y coordinate
+        //   -4 = maxWidth (in pixel)
+        //   -3 = maxHeight (in pixel)
+        //   -2 = scale
+        //   -1 = aspectRatio
+
+        // fetch the parameters and check for validity. If parameter is invalid -> hard error
+        double x = luaL_optnumber(L, -6, 0);
+        double y = luaL_optnumber(L, -5, 0);
+
+        int maxHeightParam = luaL_optinteger(L, -3, -1);
+        if (maxHeightParam <= 0 && maxHeightParam != -1) {
+            return luaL_error(L, "Invalid height given, must be positive integer or -1 to deactivate manual setting.");
+        }
+
+        int maxWidthParam = luaL_optinteger(L, -4, -1);
+        if (maxWidthParam <= 0 && maxWidthParam != -1) {
+            return luaL_error(L, "Invalid width given, must be positive integer or -1 to deactivate manual setting.");
+        }
+
+        double scale = luaL_optnumber(L, -2, 1);
+        if (scale <= 0) {
+            return luaL_error(L, "Invalid scale given, must be a positive number.");
+        }
+
+        bool aspectRatio{true};
+        if (!lua_isnil(L, -1)) {
+            // use the typical lua version of booleans (everything different than false (any set value) is true)
+            aspectRatio = lua_toboolean(L, -1);
+        }
+
+        const char* path = luaL_checkstring(L, -7);
+        if (!path) {
+            return luaL_error(L, "no 'path' parameter was provided.");
+        }
+
+        xoj::util::GObjectSPtr<GFile> file(g_file_new_for_path(path), xoj::util::adopt);
+        if (!g_file_query_exists(file.get(), NULL)) {
+            lua_pop(L, 8);  // pop the params we fetched from the global param-table from the stack
+            lua_pushfstring(L, "Error: file '%s' does not exist.", path);  // soft error
+            continue;
+        }
+
+        XojPageView* pv = control->getWindow()->getXournal()->getViewFor(control->getCurrentPageNo());
+        ImageHandler imgHandler(control, pv);
+        auto [img, width, height] = imgHandler.createImage(file.get(), x, y);
+        if (!img) {
+            lua_pop(L, 8);  // pop the params we fetched from the global param-table from the stack
+            lua_pushfstring(L, "Error: creating the image (%s) failed.", path);  // soft error
+            continue;
+        }
+
+        // apply width/height parameter
+        if (maxWidthParam != -1 && maxHeightParam != -1) {
+            // both width and height are set
+            if (aspectRatio) {
+                double scale_y{static_cast<double>(maxHeightParam) / static_cast<double>(height)};
+                double scale_x{static_cast<double>(maxWidthParam) / static_cast<double>(width)};
+                double scale{std::min(scale_y, scale_x)};
+
+                height = static_cast<int>(std::round(height * scale));
+                width = static_cast<int>(std::round(width * scale));
+            } else {
+                width = maxWidthParam;
+                height = maxHeightParam;
+            }
+        } else if (maxWidthParam != -1 && maxHeightParam == -1) {
+            // maxHeight is set
+            if (aspectRatio) {
+                height = static_cast<int>(
+                        std::round(static_cast<double>(height) / static_cast<double>(width) * maxWidthParam));
+            }
+            width = maxWidthParam;
+        } else if (maxHeightParam != -1 && maxWidthParam == -1) {
+            // maxWidth is set
+            if (aspectRatio) {
+                width = static_cast<int>(
+                        std::round(static_cast<double>(width) / static_cast<double>(height) * maxHeightParam));
+            }
+            height = maxHeightParam;
+        }
+
+        // apply scale option
+        width = static_cast<int>(std::round(width * scale));
+        height = static_cast<int>(std::round(height * scale));
+
+        // scale down keeping the current aspect ratio after the manual scaling to fit the image on the page
+        // if the image already fits on the screen, no other scaling is applied here
+        // already sets width/height in the image
+        imgHandler.automaticScaling(img, x, y, width, height);
+
+        // store the image to later build the undo/redo action chain
+        images.push_back(img);
+
+        lua_pop(L, 8);  // pop the params we fetched from the global param-table from the stack
+
+        bool succ = imgHandler.addImageToDocument(img, false);
+        if (!succ) {
+            lua_pushfstring(L, "Error: Inserting the image (%s) failed.", path);  // soft error
+        }
+
+        lua_pushnil(L);
+    }
+
+    // Check how the user wants to handle undoing
+    lua_getfield(L, 1, "allowUndoRedoAction");
+    const char* allowUndoRedoAction = luaL_optstring(L, -1, "grouped");
+    lua_pop(L, 1);
+    handleUndoRedoActionHelper(L, control, allowUndoRedoAction, images);
+
+    return static_cast<int>(cntParams);
+}
+
+/*
  * The full Lua Plugin API.
  * See above for example usage of each function.
  */
@@ -2001,6 +2209,7 @@ static const luaL_Reg applib[] = {{"msgbox", applib_msgbox},
                                   {"export", applib_export},
                                   {"addStrokes", applib_addStrokes},
                                   {"addSplines", applib_addSplines},
+                                  {"addImagesFromFilepath", applib_addImagesFromFilepath},
                                   {"getFilePath", applib_getFilePath},
                                   {"refreshPage", applib_refreshPage},
                                   {"getStrokes", applib_getStrokes},
@@ -2013,7 +2222,7 @@ static const luaL_Reg applib[] = {{"msgbox", applib_msgbox},
 /**
  * Open application Library
  */
-LUAMOD_API int luaopen_app(lua_State* L) {
+inline int luaopen_app(lua_State* L) {
     luaL_newlib(L, applib);
     //	lua_pushnumber(L, MSG_BT_OK);
     //	lua_setfield(L, -2, "MSG_BT_OK");

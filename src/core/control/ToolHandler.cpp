@@ -1,7 +1,7 @@
 #include "ToolHandler.h"
 
 #include <algorithm>  // for clamp
-#include <cinttypes>  // for uint32_t
+#include <cstdint>    // for uint32_t
 #include <cstdio>     // for size_t
 #include <optional>   // for nullopt, optional
 #include <string>     // for operator==, string, basic_string
@@ -77,6 +77,12 @@ void ToolHandler::initTools() {
 
     tools[TOOL_SELECT_REGION - TOOL_PEN] =
             std::make_unique<Tool>("selectRegion", TOOL_SELECT_REGION, Colors::black, TOOL_CAP_NONE, std::nullopt);
+
+    tools[TOOL_SELECT_MULTILAYER_RECT - TOOL_PEN] =
+            std::make_unique<Tool>("selectMultiLayerRect", TOOL_SELECT_MULTILAYER_RECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
+
+    tools[TOOL_SELECT_MULTILAYER_REGION - TOOL_PEN] =
+            std::make_unique<Tool>("selectMultiLayerRegion", TOOL_SELECT_MULTILAYER_REGION, Colors::black, TOOL_CAP_NONE, std::nullopt);
 
     tools[TOOL_SELECT_OBJECT - TOOL_PEN] =
             std::make_unique<Tool>("selectObject", TOOL_SELECT_OBJECT, Colors::black, TOOL_CAP_NONE, std::nullopt);
@@ -313,7 +319,8 @@ void ToolHandler::setButtonSize(ToolSize size, Button button) {
 }
 
 void ToolHandler::setLineStyle(const LineStyle& style) {
-    this->tools[TOOL_PEN - TOOL_PEN]->setLineStyle(style);
+    Tool* tool = this->toolbarSelectedTool;
+    tool->setLineStyle(style);
     this->stateChangeListener->toolLineStyleChanged();
 }
 
@@ -341,9 +348,14 @@ auto ToolHandler::getColor() const -> Color {
     return tool->getColor();
 }
 
-/**
- * @return -1 if fill is disabled, else the fill alpha value
- */
+void ToolHandler::setFillEnabled(bool fill, bool fireEvent) {
+    Tool* tool = this->toolbarSelectedTool;
+    tool->setFill(fill);
+    if (fireEvent) {
+        this->stateChangeListener->toolFillChanged();
+    }
+}
+
 auto ToolHandler::getFill() const -> int {
     Tool* tool = this->activeTool;
     if (!tool->getFill()) {
@@ -470,7 +482,7 @@ void ToolHandler::loadSettings() {
 
             std::string style;
             if (st.getString("style", style)) {
-                tool->setLineStyle(StrokeStyle::parseStyle(style.c_str()));
+                tool->setLineStyle(StrokeStyle::parseStyle(style));
             }
 
             std::string value;
@@ -544,6 +556,7 @@ void ToolHandler::setSelectionEditTools(bool setColor, bool setSize, bool setFil
     }
 
     if (this->activeTool->type == TOOL_SELECT_RECT || this->activeTool->type == TOOL_SELECT_REGION ||
+        this->activeTool->type == TOOL_SELECT_MULTILAYER_RECT || this->activeTool->type == TOOL_SELECT_MULTILAYER_REGION ||
         this->activeTool->type == TOOL_SELECT_OBJECT || this->activeTool->type == TOOL_PLAY_OBJECT) {
         this->stateChangeListener->toolColorChanged();
         this->stateChangeListener->toolSizeChanged();
@@ -562,11 +575,20 @@ auto ToolHandler::isSinglePageTool() const -> bool {
              drawingType == DRAWING_TYPE_ELLIPSE || drawingType == DRAWING_TYPE_COORDINATE_SYSTEM ||
              drawingType == DRAWING_TYPE_LINE || drawingType == DRAWING_TYPE_RECTANGLE ||
              drawingType == DRAWING_TYPE_SPLINE)) ||
-           toolType == TOOL_SELECT_REGION || toolType == TOOL_SELECT_RECT || toolType == TOOL_SELECT_OBJECT ||
+           toolType == TOOL_SELECT_RECT || toolType == TOOL_SELECT_REGION || toolType == TOOL_SELECT_MULTILAYER_RECT ||
+           toolType == TOOL_SELECT_MULTILAYER_REGION || toolType == TOOL_SELECT_OBJECT ||
            toolType == TOOL_DRAW_RECT || toolType == TOOL_DRAW_ELLIPSE || toolType == TOOL_DRAW_COORDINATE_SYSTEM ||
            toolType == TOOL_DRAW_ARROW || toolType == TOOL_DRAW_DOUBLE_ARROW || toolType == TOOL_FLOATING_TOOLBOX ||
            toolType == TOOL_DRAW_SPLINE || toolType == TOOL_SELECT_PDF_TEXT_LINEAR ||
            toolType == TOOL_SELECT_PDF_TEXT_RECT;
+}
+
+auto ToolHandler::supportsTapFilter() const -> bool {
+    ToolType toolType = this->getToolType();
+
+    return toolType == TOOL_PEN || toolType == TOOL_HIGHLIGHTER || toolType == TOOL_HAND ||
+           toolType == TOOL_DRAW_RECT || toolType == TOOL_DRAW_ELLIPSE || toolType == TOOL_DRAW_COORDINATE_SYSTEM ||
+           toolType == TOOL_DRAW_ARROW || toolType == TOOL_DRAW_DOUBLE_ARROW || toolType == TOOL_DRAW_SPLINE;
 }
 
 auto ToolHandler::getSelectedTool(SelectedTool selectedTool) const -> Tool* {

@@ -47,6 +47,12 @@ enum ScrollbarHideType {
     SCROLLBAR_HIDE_BOTH = SCROLLBAR_HIDE_HORIZONTAL | SCROLLBAR_HIDE_VERTICAL
 };
 
+enum class EmptyLastPageAppendType {
+    Disabled = 0,
+    OnDrawOfLastPage = 1,
+    OnScrollToEndOfLastPage = 2,
+};
+
 /**
  * The user-selectable device types
  */
@@ -66,9 +72,35 @@ enum StylusCursorType {
     STYLUS_CURSOR_ARROW = 3,
 };
 
+enum EraserVisibility {
+    ERASER_VISIBILITY_NEVER = 0,
+    ERASER_VISIBILITY_ALWAYS = 1,
+    ERASER_VISIBILITY_HOVER = 2,
+    ERASER_VISIBILITY_TOUCH = 3,
+};
+
 enum IconTheme {
     ICON_THEME_COLOR = 0,
     ICON_THEME_LUCIDE = 1,
+};
+
+/**
+ * The user-selectable Page Preview Decoration style
+ */
+enum class SidebarNumberingStyle {
+    /* No page numbers are displayed */
+    NONE = 0,
+    /* Page numbers are displayed below previews */
+    NUMBER_BELOW_PREVIEW = 1,
+    /* Page numbers are displayed in a circle in the lower right corner */
+    NUMBER_WITH_CIRCULAR_BACKGROUND = 2,
+    /* Page numbers are displayed in a square in the lower right corner */
+    NUMBER_WITH_SQUARE_BACKGROUND = 3,
+
+    /* MIN, MAX and Default values. Need to be updated when new style is added. */
+    MIN = SidebarNumberingStyle::NONE,
+    MAX = SidebarNumberingStyle::NUMBER_WITH_SQUARE_BACKGROUND,
+    DEFAULT = SidebarNumberingStyle::NUMBER_BELOW_PREVIEW
 };
 
 constexpr auto buttonToString(Button button) -> const char* {
@@ -107,6 +139,21 @@ constexpr auto stylusCursorTypeToString(StylusCursorType stylusCursorType) -> co
     }
 }
 
+constexpr auto eraserVisibilityToString(EraserVisibility eraserVisibility) -> const char* {
+    switch (eraserVisibility) {
+        case ERASER_VISIBILITY_NEVER:
+            return "never";
+        case ERASER_VISIBILITY_ALWAYS:
+            return "always";
+        case ERASER_VISIBILITY_HOVER:
+            return "hover";
+        case ERASER_VISIBILITY_TOUCH:
+            return "touch";
+        default:
+            return "unknown";
+    }
+}
+
 constexpr auto iconThemeToString(IconTheme iconTheme) -> const char* {
     switch (iconTheme) {
         case ICON_THEME_COLOR:
@@ -118,5 +165,20 @@ constexpr auto iconThemeToString(IconTheme iconTheme) -> const char* {
     }
 }
 
+constexpr auto emptyLastPageAppendToString(EmptyLastPageAppendType appendType) -> const char* {
+    switch (appendType) {
+        case EmptyLastPageAppendType::Disabled:
+            return "disabled";
+        case EmptyLastPageAppendType::OnDrawOfLastPage:
+            return "onDrawOfLastPage";
+        case EmptyLastPageAppendType::OnScrollToEndOfLastPage:
+            return "onScrollOfLastPage";
+        default:
+            return "unknown";
+    }
+}
+
 StylusCursorType stylusCursorTypeFromString(const std::string& stylusCursorTypeStr);
+EraserVisibility eraserVisibilityFromString(const std::string& eraserVisibilityStr);
 IconTheme iconThemeFromString(const std::string& iconThemeStr);
+EmptyLastPageAppendType emptyLastPageAppendFromString(const std::string& str);

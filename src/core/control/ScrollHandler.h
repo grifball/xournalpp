@@ -17,6 +17,7 @@
 #include "model/PageRef.h"                // for PageRef
 
 class Control;
+class LinkDestination;
 
 class ScrollHandler: public SpinPageListener {
 public:
@@ -35,6 +36,17 @@ public:
 
     void scrollToAnnotatedPage(bool next);
     void scrollToBookmarkedPage(bool next);
+
+    /**
+     * Scroll to a given link's destination, provided the
+     * destination is a local destination and not a URI.
+     *
+     *  If the destination is a non-existent PDF page,
+     * we ask the user whether to add the missing page or not.
+     *
+     * @param dest is to shown
+     */
+    void scrollToLinkDest(const LinkDestination& dest);
 
     bool isPageVisible(size_t page, int* visibleHeight = nullptr);
 

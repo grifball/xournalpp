@@ -11,9 +11,14 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cassert>
-#include <stdexcept>
+#include <cstddef>
+#include <iterator>
+#include <memory>
+#include <type_traits>
+#include <utility>
 
 #include "BasePointerIterator.h"
 

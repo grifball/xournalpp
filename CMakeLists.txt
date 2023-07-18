@@ -29,6 +29,17 @@ set_directory_properties(PROPERTIES EP_BASE "${PROJECT_BINARY_DIR}/external")
 add_definitions(-D_USE_MATH_DEFINES)
 add_definitions(-DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED)
 
+include(CheckCXXCompilerFlag)
+if (CMAKE_GENERATOR STREQUAL "Ninja")
+    CHECK_CXX_COMPILER_FLAG("-fcolor-diagnostics" CLANG_HAS_COLOR)
+    CHECK_CXX_COMPILER_FLAG("-fdiagnostics-color=always" GNU_HAS_COLOR)
+    if(CLANG_HAS_COLOR)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
+    elseif(GNU_HAS_COLOR)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
+    endif()
+endif()
+
 # package version
 include(Version)
 core_find_git_rev(RELEASE_IDENTIFIER)
@@ -124,15 +135,21 @@ endif ()
 
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
-find_package(Lua 5.3) # Lua 5.4 is only supported with cmake >=3.18
-if (Lua_FOUND)
+
+option(ENABLE_PLUGINS "Compile with plugin support" ON)
+find_package(Lua) # Lua 5.4 is only supported with cmake >=3.18
+message(STATUS "Found Lua: ${Lua_FOUND}")
+if (Lua_FOUND AND ENABLE_PLUGINS)
     # currently not fully supported by cmake
-    message("Enable Xournal++ Plugins")
+    message(STATUS "Enable Xournal++ Plugins")
     add_library(lua INTERFACE)
     target_link_libraries(lua INTERFACE ${LUA_LIBRARIES})
     target_include_directories(lua INTERFACE ${LUA_INCLUDE_DIR})
     target_compile_definitions(lua INTERFACE ENABLE_PLUGINS)
     add_library(Lua::lua ALIAS lua)
+else ()
+    message(STATUS "Disable Xournal++ Plugins")
+    set(ENABLE_PLUGINS OFF)
 endif ()
 
 if (GtkSourceView_FOUND)
@@ -205,6 +222,7 @@ add_subdirectory(po)
 
 # Development options
 option(DEV_CALL_LOG "Call log" OFF)
+add_compile_definitions(G_LOG_DOMAIN="xopp")
 
 # Debug options
 option(DEBUG_INPUT "Input debugging, e.g. eraser events etc" OFF)

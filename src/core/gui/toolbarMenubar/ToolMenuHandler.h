@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cstddef>  // for size_t
+#include <memory>   // for unique_ptr
 #include <string>   // for string
 #include <vector>   // for vector
 
@@ -27,6 +28,7 @@
 class AbstractToolItem;
 class FontButton;
 class GladeGui;
+class GladeSearchpath;
 class ToolbarData;
 class ToolbarModel;
 class ToolButton;
@@ -42,11 +44,14 @@ class PageBackgroundChangeController;
 class ActionHandler;
 class ColorToolItem;
 class MenuItem;
+struct ToolbarButtonEntry;
 
 class ToolMenuHandler {
 public:
-    ToolMenuHandler(Control* control, GladeGui* gui, GtkWindow* parent);
+    ToolMenuHandler(Control* control, GladeGui* gui);
     virtual ~ToolMenuHandler();
+
+    void populate(const GladeSearchpath* gladeSearchPath);
 
 public:
     void freeDynamicToolbarItems();
@@ -66,6 +71,7 @@ public:
     void registerMenupoint(GtkWidget* widget, ActionType type, ActionGroup group = GROUP_NOGROUP);
 
     void initToolItems();
+    void addPluginItem(ToolbarButtonEntry* t);
 
     void setUndoDescription(const std::string& description);
     void setRedoDescription(const std::string& description);
@@ -73,14 +79,14 @@ public:
     SpinPageAdapter* getPageSpinner();
     void setPageInfo(size_t pagecount, size_t pdfpage = 0);
 
-    void setFontButtonFont(XojFont& font);
+    void setFontButtonFont(const XojFont& font);
     XojFont getFontButtonFont();
 
     void showFontSelectionDlg();
 
     void setTmpDisabled(bool disabled);
 
-    void removeColorToolItem(AbstractToolItem* it);
+    [[maybe_unused]] void removeColorToolItem(AbstractToolItem* it);
     void addColorToolItem(AbstractToolItem* it);
 
     ToolbarModel* getModel();
@@ -90,7 +96,7 @@ public:
 
     Control* getControl();
 
-    bool isColorInUse(Color color);
+    [[maybe_unused]] bool isColorInUse(Color color);
 
     void disableAudioPlaybackButtons();
 
@@ -133,7 +139,7 @@ private:
     GladeGui* gui = nullptr;
     ToolHandler* toolHandler = nullptr;
 
-    ToolbarModel* tbModel = nullptr;
+    std::unique_ptr<ToolbarModel> tbModel;
 
     PageTypeMenu* newPageType = nullptr;
     PageBackgroundChangeController* pageBackgroundChangeController = nullptr;

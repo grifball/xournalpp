@@ -12,8 +12,10 @@
 
 #include "control/AudioController.h"                             // for Audi...
 #include "control/ClipboardHandler.h"                            // for Clip...
+#include "control/CompassController.h"                           // for Comp...
 #include "control/RecentManager.h"                               // for Rece...
 #include "control/ScrollHandler.h"                               // for Scro...
+#include "control/SetsquareController.h"                         // for Sets...
 #include "control/Tool.h"                                        // for Tool
 #include "control/ToolHandler.h"                                 // for Tool...
 #include "control/jobs/AutosaveJob.h"                            // for Auto...
@@ -31,14 +33,15 @@
 #include "control/settings/PageTemplateSettings.h"               // for Page...
 #include "control/settings/Settings.h"                           // for Sett...
 #include "control/settings/SettingsEnums.h"                      // for Button
+#include "control/settings/ViewModes.h"                          // for ViewM..
 #include "control/tools/EditSelection.h"                         // for Edit...
+#include "control/tools/TextEditor.h"                            // for Text...
 #include "control/xojfile/LoadHandler.h"                         // for Load...
 #include "control/zoom/ZoomControl.h"                            // for Zoom...
 #include "gui/MainWindow.h"                                      // for Main...
 #include "gui/PageView.h"                                        // for XojP...
 #include "gui/PdfFloatingToolbox.h"                              // for PdfF...
 #include "gui/SearchBar.h"                                       // for Sear...
-#include "gui/TextEditor.h"                                      // for Text...
 #include "gui/XournalView.h"                                     // for Xour...
 #include "gui/XournalppCursor.h"                                 // for Xour...
 #include "gui/dialog/AboutDialog.h"                              // for Abou...
@@ -50,13 +53,18 @@
 #include "gui/dialog/SettingsDialog.h"                           // for Sett...
 #include "gui/dialog/ToolbarManageDialog.h"                      // for Tool...
 #include "gui/dialog/toolbarCustomize/ToolbarDragDropHandler.h"  // for Tool...
+#include "gui/inputdevices/CompassInputHandler.h"                // for Comp...
+#include "gui/inputdevices/GeometryToolInputHandler.h"           // for Geom...
 #include "gui/inputdevices/HandRecognition.h"                    // for Hand...
+#include "gui/inputdevices/SetsquareInputHandler.h"              // for Sets...
 #include "gui/sidebar/Sidebar.h"                                 // for Sidebar
 #include "gui/toolbarMenubar/ToolMenuHandler.h"                  // for Tool...
 #include "gui/toolbarMenubar/model/ToolbarData.h"                // for Tool...
 #include "gui/toolbarMenubar/model/ToolbarModel.h"               // for Tool...
+#include "model/Compass.h"                                       // for Comp...
 #include "model/Document.h"                                      // for Docu...
 #include "model/DocumentChangeType.h"                            // for DOCU...
+#include "model/DocumentListener.h"                              // for Docu...
 #include "model/Element.h"                                       // for Element
 #include "model/Font.h"                                          // for XojFont
 #include "model/Image.h"                                         // for Image
@@ -86,7 +94,9 @@
 #include "util/i18n.h"                                           // for _, FS
 #include "util/serializing/InputStreamException.h"               // for Inpu...
 #include "util/serializing/ObjectInputStream.h"                  // for Obje...
+#include "view/CompassView.h"                                    // for Comp...
 #include "view/SetsquareView.h"                                  // for Sets...
+#include "view/overlays/OverlayView.h"                           // for Over...
 
 #include "CrashHandler.h"                    // for emer...
 #include "FullscreenHandler.h"               // for Full...
@@ -100,9 +110,7 @@
 using std::string;
 
 Control::Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath): gtkApp(gtkApp) {
-    this->recent = new RecentManager();
     this->undoRedo = new UndoRedoHandler(this);
-    this->recent->addListener(this);
     this->undoRedo->addUndoRedoListener(this);
     this->isBlocking = false;
 
@@ -172,8 +180,6 @@ Control::~Control() {
     this->pluginController = nullptr;
     delete this->clipboardHandler;
     this->clipboardHandler = nullptr;
-    delete this->recent;
-    this->recent = nullptr;
     delete this->undoRedo;
     this->undoRedo = nullptr;
     delete this->settings;
@@ -238,7 +244,7 @@ void Control::renameLastAutosaveFile() {
     std::vector<string> errors;
     try {
         Util::safeRenameFile(filename, renamed);
-    } catch (fs::filesystem_error const& e) {
+    } catch (const fs::filesystem_error& e) {
         auto fmtstr = _F("Could not rename autosave file from \"{1}\" to \"{2}\": {3}");
         errors.emplace_back(FS(fmtstr % filename.u8string() % renamed.u8string() % e.what()));
     }
@@ -269,7 +275,9 @@ auto Control::checkChangedDocument(Control* control) -> bool {
     for (auto const& page: control->changedPages) {
         auto p = control->doc->indexOf(page);
         if (p != npos) {
-            control->firePageChanged(p);
+            for (DocumentListener* dl: control->changedDocumentListeners) {
+                dl->pageChanged(p);
+            }
         }
     }
     control->changedPages.clear();
@@ -295,7 +303,6 @@ void Control::saveSettings() {
 }
 
 void Control::initWindow(MainWindow* win) {
-    win->setRecentMenu(recent->getMenu());
     selectTool(toolHandler->getToolType());
     this->win = win;
     this->sidebar = new Sidebar(win, this);
@@ -338,13 +345,11 @@ void Control::initWindow(MainWindow* win) {
 
     win->setFontButtonFont(settings->getFont());
 
-    this->pluginController->registerMenu();
-
     win->rebindMenubarAccelerators();
 
     fireActionSelected(GROUP_SNAPPING, settings->isSnapRotation() ? ACTION_ROTATION_SNAPPING : ACTION_NONE);
     fireActionSelected(GROUP_GRID_SNAPPING, settings->isSnapGrid() ? ACTION_GRID_SNAPPING : ACTION_NONE);
-    fireActionSelected(GROUP_SETSQUARE, ACTION_NONE);
+    fireActionSelected(GROUP_GEOMETRY_TOOL, ACTION_NONE);
 }
 
 auto Control::autosaveCallback(Control* control) -> bool {
@@ -449,9 +454,11 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GtkToolButton*
             break;
             // Menu Edit
         case ACTION_UNDO:
+            clearSelectionEndText();
             UndoRedoController::undo(this);
             break;
         case ACTION_REDO:
+            clearSelectionEndText();
             UndoRedoController::redo(this);
             break;
         case ACTION_CUT:
@@ -619,6 +626,16 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GtkToolButton*
                 selectTool(TOOL_SELECT_REGION);
             }
             break;
+        case ACTION_TOOL_SELECT_MULTILAYER_RECT:
+            if (enabled) {
+                selectTool(TOOL_SELECT_MULTILAYER_RECT);
+            }
+            break;
+        case ACTION_TOOL_SELECT_MULTILAYER_REGION:
+            if (enabled) {
+                selectTool(TOOL_SELECT_MULTILAYER_REGION);
+            }
+            break;
         case ACTION_TOOL_SELECT_OBJECT:
             if (enabled) {
                 selectTool(TOOL_SELECT_OBJECT);
@@ -653,23 +670,26 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GtkToolButton*
                 selectTool(TOOL_HAND);
             }
             break;
-        case ACTION_SETSQUARE:
-            if (!this->win->getXournal()->getSetsquareView()) {
-                // bring up setsquare in page center
-                auto setsquare = std::make_unique<Setsquare>();
-                auto view = win->getXournal()->getViewFor(getCurrentPageNo());
-                std::unique_ptr<SetsquareView> setsquareView = std::make_unique<SetsquareView>(view, setsquare);
-                if (!view) {
-                    setsquareView.reset(nullptr);
-                }
-                this->win->getXournal()->setSetsquareView(std::move(setsquareView));
-                fireActionSelected(GROUP_SETSQUARE, ACTION_SETSQUARE);
-            } else {
-                // hide setsquare
-                this->win->getXournal()->resetSetsquareView();
+        case ACTION_SETSQUARE: {
+            bool needsNewSetsquare = !this->geometryToolController ||
+                                     this->geometryToolController->getType() != GeometryToolType::SETSQUARE;
+            resetGeometryTool();
+            if (needsNewSetsquare) {
+                makeGeometryTool<Setsquare, xoj::view::SetsquareView, SetsquareController, SetsquareInputHandler,
+                                 ACTION_SETSQUARE>();
             }
-            win->getXournal()->repaintSetsquare(true);
             break;
+        }
+        case ACTION_COMPASS: {
+            bool needsNewCompass = !this->geometryToolController ||
+                                   this->geometryToolController->getType() != GeometryToolType::COMPASS;
+            resetGeometryTool();
+            if (needsNewCompass) {
+                makeGeometryTool<Compass, xoj::view::CompassView, CompassController, CompassInputHandler,
+                                 ACTION_COMPASS>();
+            }
+            break;
+        }
         case ACTION_TOOL_FLOATING_TOOLBOX:
             if (enabled) {
                 selectTool(TOOL_FLOATING_TOOLBOX);
@@ -883,7 +903,7 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GtkToolButton*
             break;
 
         case ACTION_FULLSCREEN:
-            setFullscreen(enabled);
+            setViewFullscreenMode(enabled);
             break;
 
         case ACTION_TOGGLE_PAIRS_PARITY: {
@@ -1073,6 +1093,30 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GtkToolButton*
     }
 }
 
+template <class ToolClass, class ViewClass, class ControllerClass, class InputHandlerClass, ActionType a>
+void Control::makeGeometryTool() {
+    const auto view = this->win->getXournal()->getViewFor(getCurrentPageNo());
+    const auto* xournal = GTK_XOURNAL(this->win->getXournal()->getWidget());
+    auto tool = new ToolClass();
+    view->addOverlayView(std::make_unique<ViewClass>(tool, view, zoom));
+    this->geometryTool = std::unique_ptr<GeometryTool>(tool);
+    this->geometryToolController = std::make_unique<ControllerClass>(view, tool);
+    std::unique_ptr<InputHandlerClass> geometryToolInputHandler =
+            std::make_unique<InputHandlerClass>(this->win->getXournal(), geometryToolController.get());
+    geometryToolInputHandler->registerToPool(tool->getHandlerPool());
+    xournal->input->setGeometryToolInputHandler(std::move(geometryToolInputHandler));
+    fireActionSelected(GROUP_GEOMETRY_TOOL, a);
+    geometryTool->notify();
+}
+
+void Control::resetGeometryTool() {
+    this->geometryToolController.reset();
+    this->geometryTool.reset();
+    auto* xournal = GTK_XOURNAL(this->win->getXournal()->getWidget());
+    xournal->input->resetGeometryToolInputHandler();
+    fireActionSelected(GROUP_GEOMETRY_TOOL, ACTION_NONE);
+}
+
 auto Control::copy() -> bool {
     if (this->win && this->win->getXournal()->copy()) {
         return true;
@@ -1246,31 +1290,15 @@ void Control::customizeToolbars() {
     this->dragDropHandler->configure();
 }
 
-void Control::endDragDropToolbar() {
-    if (!this->dragDropHandler) {
-        return;
-    }
-
-    this->dragDropHandler->clearToolbarsFromDragAndDrop();
-}
-
-void Control::startDragDropToolbar() {
-    if (!this->dragDropHandler) {
-        return;
-    }
-
-    this->dragDropHandler->prepareToolbarsForDragAndDrop();
-}
-
-auto Control::isInDragAndDropToolbar() -> bool {
-    if (!this->dragDropHandler) {
-        return false;
-    }
-
-    return this->dragDropHandler->isInDragAndDrop();
-}
-
 void Control::setShapeTool(ActionType type, bool enabled) {
+
+    if (this->toolHandler->getDrawingType() == DRAWING_TYPE_SPLINE && (type != ACTION_TOOL_DRAW_SPLINE || !enabled)) {
+        // Shape changed from spline to something else: finish ongoing splines
+        if (win) {
+            win->getXournal()->endSplineAllPages();
+        }
+    }
+
     if (!enabled) {
         // Disable all entries
         this->toolHandler->setDrawingType(DRAWING_TYPE_DEFAULT);
@@ -1371,11 +1399,15 @@ void Control::updateDeletePageButton() {
 void Control::deletePage() {
     clearSelectionEndText();
 
-    // if the current page contains the Setsquare, reset it
+    // if the current page contains the geometry tool, reset it
     size_t pNr = getCurrentPageNo();
-    auto setsquareView = win->getXournal()->getSetsquareView();
-    if (setsquareView && doc->indexOf(setsquareView->getPage()) == pNr) {
-        win->getXournal()->resetSetsquareView();
+    if (geometryToolController) {
+        doc->lock();
+        auto page = doc->indexOf(geometryToolController->getPage());
+        doc->unlock();
+        if (page == pNr) {
+            resetGeometryTool();
+        }
     }
     // don't allow delete pages if we have less than 2 pages,
     // so we can be (more or less) sure there is at least one page.
@@ -1435,7 +1467,9 @@ void Control::duplicatePage() {
     insertPage(pageCopy, getCurrentPageNo() + 1);
 }
 
-void Control::insertNewPage(size_t position) { pageBackgroundChangeController->insertNewPage(position); }
+void Control::insertNewPage(size_t position, bool shouldScrollToPage) {
+    pageBackgroundChangeController->insertNewPage(position, shouldScrollToPage);
+}
 
 void Control::appendNewPdfPages() {
     auto pageCount = this->doc->getPageCount();
@@ -1473,7 +1507,7 @@ void Control::appendNewPdfPages() {
     }
 }
 
-void Control::insertPage(const PageRef& page, size_t position) {
+void Control::insertPage(const PageRef& page, size_t position, bool shouldScrollToPage) {
     this->doc->lock();
     this->doc->insertPage(page, position);  // insert the new page to the document and update page numbers
     this->doc->unlock();
@@ -1486,24 +1520,25 @@ void Control::insertPage(const PageRef& page, size_t position) {
 
     // make the inserted page fully visible (or at least as much from the top which fits on the screen),
     // and make the page appear selected
-    scrollHandler->scrollToPage(position);
-    firePageSelected(position);
+    if (shouldScrollToPage) {
+        scrollHandler->scrollToPage(position);
+        firePageSelected(position);
+    }
+
 
     updateDeletePageButton();
     undoRedo->addUndoAction(std::make_unique<InsertDeletePageUndoAction>(page, position, true));
 }
 
 void Control::gotoPage() {
-    auto* dlg = new GotoDialog(this->gladeSearchPath, int(this->doc->getPageCount()));
+    auto dlg = GotoDialog(this->gladeSearchPath, int(this->doc->getPageCount()));
 
-    dlg->show(GTK_WINDOW(this->win->getWindow()));
-    auto page = dlg->getSelectedPage();
+    dlg.show(GTK_WINDOW(this->win->getWindow()));
+    auto page = dlg.getSelectedPage();
 
     if (page > 0) {
         this->scrollHandler->scrollToPage(size_t(page - 1), 0);
     }
-
-    delete dlg;
 }
 
 void Control::updateBackgroundSizeButton() {
@@ -1527,10 +1562,10 @@ void Control::updateBackgroundSizeButton() {
 }
 
 void Control::paperTemplate() {
-    auto dlg = std::make_unique<PageTemplateDialog>(this->gladeSearchPath, settings, pageTypes);
-    dlg->show(GTK_WINDOW(this->win->getWindow()));
+    auto dlg = PageTemplateDialog(this->gladeSearchPath, settings, pageTypes);
+    dlg.show(GTK_WINDOW(this->win->getWindow()));
 
-    if (dlg->isSaved()) {
+    if (dlg.isSaved()) {
         newPageType->loadDefaultPage();
     }
 }
@@ -1542,11 +1577,11 @@ void Control::paperFormat() {
     }
     clearSelectionEndText();
 
-    auto* dlg = new FormatDialog(this->gladeSearchPath, settings, page->getWidth(), page->getHeight());
-    dlg->show(GTK_WINDOW(this->win->getWindow()));
+    auto dlg = FormatDialog(this->gladeSearchPath, settings, page->getWidth(), page->getHeight());
+    dlg.show(GTK_WINDOW(this->win->getWindow()));
 
-    double width = dlg->getWidth();
-    double height = dlg->getHeight();
+    double width = dlg.getWidth();
+    double height = dlg.getHeight();
 
     if (width > 0) {
         this->doc->lock();
@@ -1558,8 +1593,6 @@ void Control::paperFormat() {
     if (pageNo != npos && pageNo < doc->getPageCount()) {
         this->firePageSizeChanged(pageNo);
     }
-
-    delete dlg;
 }
 
 void Control::changePageBackgroundColor() {
@@ -1595,8 +1628,18 @@ void Control::setViewPairedPages(bool enabled) {
     scrollHandler->scrollToPage(getCurrentPageNo());
 }
 
+void Control::setViewFullscreenMode(bool enabled) {
+    if (enabled) {
+        this->loadViewMode(VIEW_MODE_FULLSCREEN);
+    } else {
+        this->loadViewMode(VIEW_MODE_DEFAULT);
+    }
+}
+
 void Control::setViewPresentationMode(bool enabled) {
     if (enabled) {
+        this->loadViewMode(VIEW_MODE_PRESENTATION);
+
         bool success = zoom->updateZoomPresentationValue();
         if (!success) {
             g_warning("Error calculating zoom value");
@@ -1604,6 +1647,8 @@ void Control::setViewPresentationMode(bool enabled) {
             return;
         }
     } else {
+        this->loadViewMode(VIEW_MODE_DEFAULT);
+
         if (settings->isViewFixedRows()) {
             setViewRows(settings->getViewRows());
         } else {
@@ -1802,7 +1847,7 @@ void Control::zoomCallback(ActionType type, bool enabled) {
     }
 }
 
-auto Control::getCurrentPageNo() -> size_t {
+auto Control::getCurrentPageNo() const -> size_t {
     if (this->win) {
         return this->win->getXournal()->getCurrentPage();
     }
@@ -1821,8 +1866,6 @@ auto Control::getCurrentPage() -> PageRef {
 
     return p;
 }
-
-void Control::fileOpened(fs::path const& path) { openFile(path); }
 
 void Control::undoRedoChanged() {
     fireEnableAction(ACTION_UNDO, undoRedo->canUndo());
@@ -1844,10 +1887,9 @@ void Control::selectTool(ToolType type) {
     // keep text-selection when switching from text to seletion tool
     auto oldTool = getToolHandler()->getActiveTool();
     if (oldTool && win && isSelectToolType(type) && oldTool->getToolType() == ToolType::TOOL_TEXT &&
-        this->win->getXournal()->getTextEditor() &&
-        !(this->win->getXournal()->getTextEditor()->getText()->getText().empty())) {
+        this->win->getXournal()->getTextEditor() && !(this->win->getXournal()->getTextEditor()->bufferEmpty())) {
         auto xournal = this->win->getXournal();
-        Text* textobj = xournal->getTextEditor()->getText();
+        Text* textobj = xournal->getTextEditor()->getTextElement();
         clearSelectionEndText();
 
         auto pageNr = getCurrentPageNo();
@@ -1863,10 +1905,6 @@ void Control::selectTool(ToolType type) {
 
     toolHandler->selectTool(type);
     toolHandler->fireToolChanged();
-
-    if (win) {
-        (win->getXournal()->getViewFor(getCurrentPageNo()))->rerenderPage();
-    }
 }
 
 void Control::selectDefaultTool() {
@@ -1877,6 +1915,8 @@ void Control::selectDefaultTool() {
         selectTool(toolHandler->getToolType());
     }
 }
+
+void Control::setFontSelected(const XojFont& font) { this->getWindow()->setFontButtonFont(font); }
 
 void Control::toolChanged() {
     ToolType type = toolHandler->getToolType();
@@ -1958,6 +1998,11 @@ void Control::toolChanged() {
     if (type != TOOL_TEXT) {
         if (win) {
             win->getXournal()->endTextAllPages();
+        }
+    }
+    if (toolHandler->getDrawingType() != DRAWING_TYPE_SPLINE) {
+        if (win) {
+            win->getXournal()->endSplineAllPages();
         }
     }
 }
@@ -2132,9 +2177,7 @@ void Control::changeColorOfSelection() {
     if (this->win && toolHandler->hasCapability(TOOL_CAP_COLOR)) {
         EditSelection* sel = this->win->getXournal()->getSelection();
         if (sel) {
-            UndoAction* undo = sel->setColor(toolHandler->getColor());
-            // move into selection
-            undoRedo->addUndoAction(UndoActionPtr(undo));
+            undoRedo->addUndoAction(sel->setColor(toolHandler->getColor()));
         }
 
         TextEditor* edit = getTextEditor();
@@ -2142,7 +2185,7 @@ void Control::changeColorOfSelection() {
 
         if (this->toolHandler->getToolType() == TOOL_TEXT && edit != nullptr) {
             // Todo move into selection
-            undoRedo->addUndoAction(UndoActionPtr(edit->setColor(toolHandler->getColor())));
+            edit->setColor(toolHandler->getColor());
         }
     }
 }
@@ -2158,9 +2201,10 @@ void Control::showSettings() {
     int horizontalSpaceAmount = settings->getAddHorizontalSpaceAmount();
     StylusCursorType stylusCursorType = settings->getStylusCursorType();
     bool highlightPosition = settings->isHighlightPosition();
+    SidebarNumberingStyle sidebarStyle = settings->getSidebarNumberingStyle();
 
-    auto* dlg = new SettingsDialog(this->gladeSearchPath, settings, this);
-    dlg->show(GTK_WINDOW(this->win->getWindow()));
+    auto dlg = SettingsDialog(this->gladeSearchPath, settings, this);
+    dlg.show(GTK_WINDOW(this->win->getWindow()));
 
     // note which settings have changed and act accordingly
     if (selectionColor != settings->getBorderColor()) {
@@ -2187,10 +2231,12 @@ void Control::showSettings() {
     this->zoom->setZoomStepScroll(settings->getZoomStepScroll() / 100.0);
     this->zoom->setZoom100Value(settings->getDisplayDpi() / Util::DPI_NORMALIZATION_FACTOR);
 
+    if (sidebarStyle != settings->getSidebarNumberingStyle()) {
+        getSidebar()->layout();
+    }
+
     getWindow()->getXournal()->getHandRecognition()->reload();
     getWindow()->updateColorscheme();
-
-    delete dlg;
 }
 
 auto Control::newFile(string pageTemplate, fs::path filepath) -> bool {
@@ -2270,8 +2316,8 @@ auto Control::openFile(fs::path filepath, int scrollToPage, bool forceOpen) -> b
         parentFolderPath = missingFilePath.parent_path().string();
         filename = missingFilePath.filename().string();
 #else
-        // since POSIX systems detect the whole Windows path as a filename, this checks whether missingFilePath contains
-        // a Windows path
+        // since POSIX systems detect the whole Windows path as a filename, this checks whether missingFilePath
+        // contains a Windows path
         std::regex regex(R"([A-Z]:\\(?:.*\\)*(.*))");
         std::cmatch matchInfo;
 
@@ -2490,6 +2536,7 @@ auto Control::annotatePdf(fs::path filepath, bool /*attachPdf*/, bool attachToDo
         return false;
     }
 
+    // Prompt the user for a path if none is provided.
     if (filepath.empty()) {
         XojOpenDlg dlg(getGtkWindow(), this->settings);
         filepath = dlg.showOpenDialog(true, attachToDocument);
@@ -2498,34 +2545,39 @@ auto Control::annotatePdf(fs::path filepath, bool /*attachPdf*/, bool attachToDo
         }
     }
 
-    this->closeDocument();
-
+    // First, we create a dummy document and load the PDF into it.
+    // We do NOT reset the current document yet because loading could fail.
     getCursor()->setCursorBusy(true);
+    auto newDoc = std::make_unique<Document>(this);
+    newDoc->setFilepath("");
 
-    this->doc->setFilepath("");
-    bool res = this->doc->readPdf(filepath, true, attachToDocument);
-
-    if (res) {
-        RecentManager::addRecentFileFilename(filepath.c_str());
-
-        this->doc->lock();
-        auto filepath = this->doc->getEvMetadataFilename();
-        this->doc->unlock();
-        MetadataEntry md = MetadataManager::getForFile(filepath);
-        loadMetadata(md);
-    } else {
-        this->doc->lock();
-        string errMsg = doc->getLastErrorMsg();
-        this->doc->unlock();
-
-        string msg = FS(_F("Error annotate PDF file \"{1}\"\n{2}") % filepath.u8string() % errMsg);
-        XojMsgBox::showErrorToUser(getGtkWindow(), msg);
-    }
+    const bool res = newDoc->readPdf(filepath, /*initPages=*/true, attachToDocument);
     getCursor()->setCursorBusy(false);
 
-    fireDocumentChanged(DOCUMENT_CHANGE_COMPLETE);
+    if (!res) {
+        // Loading failed, so display the error to the user.
+        newDoc->lock();
+        std::string errMsg = newDoc->getLastErrorMsg();
+        newDoc->unlock();
 
-    getCursor()->updateCursor();
+        std::string msg = FS(_F("Error annotate PDF file \"{1}\"\n{2}") % filepath.u8string() % errMsg);
+        XojMsgBox::showErrorToUser(getGtkWindow(), msg);
+        return false;
+    }
+
+    // Success, so we can close the current document.
+    this->closeDocument();
+    // Then we overwrite the global document with the new document.
+    // FIXME: there could potentially be a data race if a job requires the old document but runs after it is closed
+    {
+        std::lock_guard<Document> lg(*doc);
+        // TODO: allow Document to be moved
+        *doc = *newDoc;
+    }
+
+    // Trigger callbacks and update UI
+    fireDocumentChanged(DOCUMENT_CHANGE_COMPLETE);
+    fileLoaded();
 
     return true;
 }
@@ -2808,7 +2860,7 @@ auto Control::close(const bool allowDestroy, const bool allowCancel) -> bool {
     if (allowDestroy && discard) {
         this->closeDocument();
     }
-    win->getXournal()->resetSetsquareView();
+    resetGeometryTool();
     return true;
 }
 
@@ -2853,6 +2905,17 @@ auto Control::askToReplace(fs::path const& filepath) const -> bool {
 void Control::showAbout() {
     AboutDialog dlg(this->gladeSearchPath);
     dlg.show(GTK_WINDOW(this->win->getWindow()));
+}
+
+auto Control::loadViewMode(ViewModeId mode) -> bool {
+    if (!settings->loadViewMode(mode)) {
+        return false;
+    }
+    this->win->setMenubarVisible(settings->isMenubarVisible());
+    this->win->setToolbarVisible(settings->isToolbarVisible());
+    this->win->setSidebarVisible(settings->isSidebarVisible());
+    setFullscreen(settings->isFullscreen());
+    return false;
 }
 
 void Control::clipboardCutCopyEnabled(bool enabled) {
@@ -2950,6 +3013,10 @@ void Control::clipboardPaste(Element* e) {
     win->getXournal()->setSelection(selection);
 }
 
+void Control::registerPluginToolButtons(ToolMenuHandler* toolMenuHandler) {
+    pluginController->registerToolButtons(toolMenuHandler);
+}
+
 void Control::clipboardPasteXournal(ObjectInputStream& in) {
     auto pNr = getCurrentPageNo();
     if (pNr == npos && win != nullptr) {
@@ -3026,7 +3093,7 @@ void Control::clipboardPasteXournal(ObjectInputStream& in) {
         selection->mouseUp();
 
         win->getXournal()->setSelection(selection);
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         g_warning("could not paste, Exception occurred: %s", e.what());
         Stacktrace::printStracktrace();
         if (selection) {
@@ -3079,6 +3146,10 @@ void Control::setClipboardHandlerSelection(EditSelection* selection) {
     }
 }
 
+void Control::addChangedDocumentListener(DocumentListener* dl) { this->changedDocumentListeners.push_back(dl); }
+
+void Control::removeChangedDocumentListener(DocumentListener* dl) { this->changedDocumentListeners.remove(dl); }
+
 void Control::setCopyCutEnabled(bool enabled) { this->clipboardHandler->setCopyCutEnabled(enabled); }
 
 void Control::setFill(bool fill) {
@@ -3091,18 +3162,11 @@ void Control::setFill(bool fill) {
         undoRedo->addUndoAction(UndoActionPtr(
                 sel->setFill(fill ? toolHandler->getPenFill() : -1, fill ? toolHandler->getHighlighterFill() : -1)));
     }
-
-    if (toolHandler->getToolType() == TOOL_PEN) {
-        fireActionSelected(GROUP_PEN_FILL, fill ? ACTION_TOOL_PEN_FILL : ACTION_NONE);
-        this->toolHandler->setPenFillEnabled(fill, false);
-    } else if (toolHandler->getToolType() == TOOL_HIGHLIGHTER) {
-        fireActionSelected(GROUP_HIGHLIGHTER_FILL, fill ? ACTION_TOOL_HIGHLIGHTER_FILL : ACTION_NONE);
-        this->toolHandler->setHighlighterFillEnabled(fill, false);
-    }
+    toolHandler->setFillEnabled(fill, true);
 }
 
 void Control::setLineStyle(const string& style) {
-    LineStyle stl = StrokeStyle::parseStyle(style.c_str());
+    LineStyle stl = StrokeStyle::parseStyle(style);
 
     EditSelection* sel = nullptr;
     if (this->win) {
@@ -3111,9 +3175,8 @@ void Control::setLineStyle(const string& style) {
 
     if (sel) {
         undoRedo->addUndoAction(sel->setLineStyle(stl));
-    } else {
-        this->toolHandler->setLineStyle(stl);
     }
+    this->toolHandler->setLineStyle(stl);
 }
 
 void Control::setToolSize(ToolSize size) {
@@ -3160,19 +3223,19 @@ void Control::runLatex() {
  * GETTER / SETTER
  */
 
-auto Control::getUndoRedoHandler() -> UndoRedoHandler* { return this->undoRedo; }
+auto Control::getUndoRedoHandler() const -> UndoRedoHandler* { return this->undoRedo; }
 
-auto Control::getZoomControl() -> ZoomControl* { return this->zoom; }
+auto Control::getZoomControl() const -> ZoomControl* { return this->zoom; }
 
-auto Control::getCursor() -> XournalppCursor* { return this->cursor; }
+auto Control::getCursor() const -> XournalppCursor* { return this->cursor; }
 
-auto Control::getDocument() -> Document* { return this->doc; }
+auto Control::getDocument() const -> Document* { return this->doc; }
 
-auto Control::getToolHandler() -> ToolHandler* { return this->toolHandler; }
+auto Control::getToolHandler() const -> ToolHandler* { return this->toolHandler; }
 
-auto Control::getScheduler() -> XournalScheduler* { return this->scheduler; }
+auto Control::getScheduler() const -> XournalScheduler* { return this->scheduler; }
 
-auto Control::getWindow() -> MainWindow* { return this->win; }
+auto Control::getWindow() const -> MainWindow* { return this->win; }
 
 auto Control::getGtkWindow() const -> GtkWindow* { return GTK_WINDOW(this->win->getWindow()); }
 
@@ -3201,28 +3264,28 @@ auto Control::getTextEditor() -> TextEditor* {
     return nullptr;
 }
 
-auto Control::getGladeSearchPath() -> GladeSearchpath* { return this->gladeSearchPath; }
+auto Control::getGladeSearchPath() const -> GladeSearchpath* { return this->gladeSearchPath; }
 
-auto Control::getRecentManager() -> RecentManager* { return recent; }
+auto Control::getSettings() const -> Settings* { return settings; }
 
-auto Control::getSettings() -> Settings* { return settings; }
+auto Control::getScrollHandler() const -> ScrollHandler* { return this->scrollHandler; }
 
-auto Control::getScrollHandler() -> ScrollHandler* { return this->scrollHandler; }
+auto Control::getMetadataManager() const -> MetadataManager* { return this->metadata; }
 
-auto Control::getMetadataManager() -> MetadataManager* { return this->metadata; }
+auto Control::getSidebar() const -> Sidebar* { return this->sidebar; }
 
-auto Control::getSidebar() -> Sidebar* { return this->sidebar; }
+auto Control::getSearchBar() const -> SearchBar* { return this->searchBar; }
 
-auto Control::getSearchBar() -> SearchBar* { return this->searchBar; }
+auto Control::getAudioController() const -> AudioController* { return this->audioController; }
 
-auto Control::getAudioController() -> AudioController* { return this->audioController; }
+auto Control::getPageTypes() const -> PageTypeHandler* { return this->pageTypes; }
 
-auto Control::getPageTypes() -> PageTypeHandler* { return this->pageTypes; }
+auto Control::getNewPageType() const -> PageTypeMenu* { return this->newPageType.get(); }
 
-auto Control::getNewPageType() -> PageTypeMenu* { return this->newPageType.get(); }
-
-auto Control::getPageBackgroundChangeController() -> PageBackgroundChangeController* {
+auto Control::getPageBackgroundChangeController() const -> PageBackgroundChangeController* {
     return this->pageBackgroundChangeController;
 }
 
-auto Control::getLayerController() -> LayerController* { return this->layerController; }
+auto Control::getLayerController() const -> LayerController* { return this->layerController; }
+
+auto Control::getPluginController() const -> PluginController* { return this->pluginController; }

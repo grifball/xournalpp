@@ -136,7 +136,7 @@ void XournalppCursor::setMouseDown(bool mouseDown) {
     ToolType type = handler->getToolType();
 
     // Not always an update is needed
-    if (type == TOOL_HAND || type == TOOL_VERTICAL_SPACE) {
+    if (type == TOOL_HAND || type == TOOL_VERTICAL_SPACE || type == TOOL_ERASER) {
         updateCursor();
     }
 }
@@ -170,9 +170,10 @@ void XournalppCursor::setCursorBusy(bool busy) {
 
     if (busy) {
         GdkWindow* window = gtk_widget_get_window(win->getWindow());
-        GdkCursor* cursor = gdk_cursor_new_from_name(gdk_window_get_display(window), cssCursors[CRSR_BUSY].cssName);
-        gdk_window_set_cursor(window, cursor);
-        g_object_unref(cursor);
+        xoj::util::GObjectSPtr<GdkCursor> cursor(
+                gdk_cursor_new_from_name(gdk_window_get_display(window), cssCursors[CRSR_BUSY].cssName),
+                xoj::util::adopt);
+        gdk_window_set_cursor(window, cursor.get());
     } else {
         if (gtk_widget_get_window(win->getWindow())) {
             gdk_window_set_cursor(gtk_widget_get_window(win->getWindow()), nullptr);
@@ -285,7 +286,14 @@ void XournalppCursor::updateCursor() {
                 }
             }
         } else if (type == TOOL_ERASER) {
-            cursor = getEraserCursor();
+            EraserVisibility visibility = control->getSettings()->getEraserVisibility();
+            if ((this->inputDevice == INPUT_DEVICE_PEN || this->inputDevice == INPUT_DEVICE_ERASER) &&
+                (visibility == ERASER_VISIBILITY_NEVER || (visibility == ERASER_VISIBILITY_HOVER && this->mouseDown) ||
+                 (visibility == ERASER_VISIBILITY_TOUCH && !this->mouseDown))) {
+                setCursor(CRSR_BLANK_CURSOR);
+            } else {
+                cursor = getEraserCursor();
+            }
         }
 
         else if (type == TOOL_TEXT) {
@@ -299,9 +307,7 @@ void XournalppCursor::updateCursor() {
         } else if (type == TOOL_FLOATING_TOOLBOX) {
             setCursor(CRSR_DEFAULT);
         } else if (type == TOOL_VERTICAL_SPACE) {
-            if (this->mouseDown) {
-                setCursor(CRSR_SB_V_DOUBLE_ARROW);
-            }
+            setCursor(CRSR_SB_V_DOUBLE_ARROW);
         } else if (type == TOOL_SELECT_OBJECT) {
             setCursor(CRSR_DEFAULT);
         } else if (type == TOOL_PLAY_OBJECT) {

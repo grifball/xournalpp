@@ -6,10 +6,12 @@
 #include "control/Control.h"
 #include "gui/MainWindow.h"
 
+#include "config-features.h"
+
 #ifdef ENABLE_PLUGINS
+#include <algorithm>
 #include <tuple>
 #include <utility>
-#include <algorithm>
 
 #include "control/settings/Settings.h"
 #include "gui/GladeSearchpath.h"
@@ -18,7 +20,6 @@
 #include "util/StringUtils.h"
 
 #include "Plugin.h"
-#include "config-features.h"
 
 namespace {
 
@@ -71,11 +72,11 @@ auto load_available_plugins_from(fs::path const& path, Control* control) -> std:
                 }
                 plugin->setEnabled(plugin->isDefaultEnabled());
                 returner.emplace_back(std::move(plugin));
-            } catch (std::exception const& e) {
+            } catch (const std::exception& e) {
                 g_warning("Error loading plugin \"%s\": %s", f.path().string().c_str(), e.what());
             }
         }
-    } catch (fs::filesystem_error const& e) {
+    } catch (const fs::filesystem_error& e) {
         g_warning("Could not open plugin dir: \"%s\": %s", path.string().c_str(), e.what());
     }
     return returner;
@@ -142,7 +143,9 @@ PluginController::PluginController(Control* control): control(control) {
 
 void PluginController::registerToolbar() {
 #ifdef ENABLE_PLUGINS
-    for (auto&& p: this->plugins) { p->registerToolbar(); }
+    for (auto&& p: this->plugins) {
+        p->registerToolbar();
+    }
 #endif
 }
 
@@ -154,15 +157,28 @@ void PluginController::showPluginManager() const {
 #endif
 }
 
-void PluginController::registerMenu() {
+auto PluginController::createMenuSections(GtkApplicationWindow* win) -> std::vector<GMenuModel*> {
 #ifdef ENABLE_PLUGINS
-    GtkWidget* menuPlugin = control->getWindow()->get("menuPlugin");
-    for (auto&& p: this->plugins) { p->registerMenu(control->getGtkWindow(), menuPlugin); }
-    gtk_widget_show_all(menuPlugin);
+    size_t id = 0;
+    std::vector<GMenuModel*> sections;
+    for (auto&& p: this->plugins) {
+        id = p->populateMenuSection(win, id);
+        auto* section = p->getMenuSection();
+        if (section) {
+            sections.emplace_back(section);
+        }
+    }
+    return sections;
 #else
-    // If plugins are disabled - disable menu also
-    GtkWidget* menuitemPlugin = control->getWindow()->get("menuitemPlugin");
-    gtk_widget_hide(menuitemPlugin);
+    return {};
+#endif
+}
+
+void PluginController::registerToolButtons(ToolMenuHandler* toolMenuHandler) {
+#ifdef ENABLE_PLUGINS
+    for (auto&& p: this->plugins) {
+        p->registerToolButton(toolMenuHandler);
+    }
 #endif
 }
 

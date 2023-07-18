@@ -19,6 +19,23 @@ auto stylusCursorTypeFromString(const std::string& stylusCursorTypeStr) -> Stylu
     return STYLUS_CURSOR_DOT;
 }
 
+auto eraserVisibilityFromString(const std::string& eraserVisibility) -> EraserVisibility {
+    if (eraserVisibility == "never") {
+        return ERASER_VISIBILITY_NEVER;
+    }
+    if (eraserVisibility == "always") {
+        return ERASER_VISIBILITY_ALWAYS;
+    }
+    if (eraserVisibility == "hover") {
+        return ERASER_VISIBILITY_HOVER;
+    }
+    if (eraserVisibility == "touch") {
+        return ERASER_VISIBILITY_TOUCH;
+    }
+    g_warning("Settings::Unknown eraser visibility: %s\n", eraserVisibility.c_str());
+    return ERASER_VISIBILITY_ALWAYS;
+}
+
 auto iconThemeFromString(const std::string& iconThemeStr) -> IconTheme {
     if (iconThemeStr == "iconsColor") {
         return ICON_THEME_COLOR;
@@ -28,4 +45,19 @@ auto iconThemeFromString(const std::string& iconThemeStr) -> IconTheme {
     }
     g_warning("Settings::Unknown icon theme: %s\n", iconThemeStr.c_str());
     return ICON_THEME_COLOR;
+}
+
+auto emptyLastPageAppendFromString(const std::string& str) -> EmptyLastPageAppendType {
+    if (str == "disabled") {
+        return EmptyLastPageAppendType::Disabled;
+    }
+    if (str == "onDrawOfLastPage") {
+        return EmptyLastPageAppendType::OnDrawOfLastPage;
+    }
+    if (str == "onScrollOfLastPage") {
+        return EmptyLastPageAppendType::OnScrollToEndOfLastPage;
+    }
+
+    g_warning("Settings::Unknown empty last page append type: %s\n", str.c_str());
+    return EmptyLastPageAppendType::Disabled;
 }

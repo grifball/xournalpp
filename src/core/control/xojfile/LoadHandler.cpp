@@ -1,6 +1,7 @@
 #include "LoadHandler.h"
 
 #include <algorithm>    // for copy
+#include <cassert>      // for assert
 #include <cmath>        // for isnan
 #include <cstdlib>      // for atoi, size_t
 #include <cstring>      // for strcmp, strlen
@@ -42,6 +43,11 @@ using std::string;
     if (error == nullptr) {                                                               \
         error = g_error_new(G_MARKUP_ERROR, G_MARKUP_ERROR_INVALID_CONTENT, __VA_ARGS__); \
     }
+
+namespace {
+    constexpr size_t MAX_VERSION_LENGTH = 50;
+    constexpr size_t MAX_MIMETYPE_LENGTH = 25;
+}
 
 LoadHandler::LoadHandler():
         attachedPdfMissing(false),
@@ -105,7 +111,7 @@ auto LoadHandler::getLastError() -> string { return this->lastError; }
 
 auto LoadHandler::isAttachedPdfMissing() const -> bool { return this->attachedPdfMissing; }
 
-auto LoadHandler::getMissingPdfFilename() -> string { return this->pdfMissing; }
+auto LoadHandler::getMissingPdfFilename() const -> string { return this->pdfMissing; }
 
 void LoadHandler::removePdfBackground() { this->removePdfBackgroundFlag = true; }
 
@@ -134,9 +140,9 @@ auto LoadHandler::openFile(fs::path const& filepath) -> bool {
                     FS(_F("The file is no valid .xopp file (Mimetype missing): \"{1}\"") % filepath.u8string());
             return false;
         }
-        char mimetype[25];
+        char mimetype[MAX_MIMETYPE_LENGTH + 1] = {};
         // read the mimetype and a few more bytes to make sure we do not only read a subset
-        zip_fread(mimetypeFp, mimetype, 25);
+        zip_fread(mimetypeFp, mimetype, MAX_MIMETYPE_LENGTH);
         if (!strcmp(mimetype, "application/xournal++")) {
             zip_fclose(mimetypeFp);
             this->lastError = FS(_F("The file is no valid .xopp file (Mimetype wrong): \"{1}\"") % filepath.u8string());
@@ -151,8 +157,8 @@ auto LoadHandler::openFile(fs::path const& filepath) -> bool {
                     FS(_F("The file is no valid .xopp file (Version missing): \"{1}\"") % filepath.u8string());
             return false;
         }
-        char versionString[50];
-        zip_fread(versionFp, versionString, 50);
+        char versionString[MAX_VERSION_LENGTH + 1] = {};
+        zip_fread(versionFp, versionString, MAX_VERSION_LENGTH);
         std::string versions(versionString);
         std::regex versionRegex("current=(\\d+?)(?:\n|\r\n)min=(\\d+?)");
         std::smatch match;
@@ -318,7 +324,7 @@ void LoadHandler::parseContents() {
         double width = LoadHandlerHelper::getAttribDouble("width", this);
         double height = LoadHandlerHelper::getAttribDouble("height", this);
 
-        this->page = std::make_unique<XojPage>(width, height);
+        this->page = std::make_unique<XojPage>(width, height, /*suppressLayer*/true);
 
         if (LoadHandlerHelper::getAttrib("bookmarked", true, this)) {
           int bookmarked = LoadHandlerHelper::getAttribInt("bookmarked", this);
@@ -802,7 +808,8 @@ void LoadHandler::parseAudio() {
     const char* filename = LoadHandlerHelper::getAttrib("fn", false, this);
 
     GFileIOStream* fileStream = nullptr;
-    GFile* tmpFile = g_file_new_tmp("xournal_audio_XXXXXX.tmp", &fileStream, nullptr);
+    xoj::util::GObjectSPtr<GFile> tmpFile(g_file_new_tmp("xournal_audio_XXXXXX.tmp", &fileStream, nullptr),
+                                          xoj::util::adopt);
     if (!tmpFile) {
         g_warning("Unable to create temporary file for audio attachment.");
         return;
@@ -839,7 +846,6 @@ void LoadHandler::parseAudio() {
     while (readBytes < length) {
         zip_int64_t read = zip_fread(attachmentFile, data, 1024);
         if (read == -1) {
-            g_object_unref(tmpFile);
             g_free(data);
             zip_fclose(attachmentFile);
             error("%s", FC(_F("Could not open attachment: {1}. Error message: Could not read file") % filename));
@@ -849,7 +855,6 @@ void LoadHandler::parseAudio() {
         gboolean writeSuccessful =
                 g_output_stream_write_all(outputStream, data, static_cast<gsize>(read), nullptr, nullptr, nullptr);
         if (!writeSuccessful) {
-            g_object_unref(tmpFile);
             g_free(data);
             zip_fclose(attachmentFile);
             error("%s", FC(_F("Could not open attachment: {1}. Error message: Could not write file") % filename));
@@ -861,7 +866,7 @@ void LoadHandler::parseAudio() {
     g_free(data);
     zip_fclose(attachmentFile);
 
-    g_hash_table_insert(this->audioFiles, g_strdup(filename), g_file_get_path(tmpFile));
+    g_hash_table_insert(this->audioFiles, g_strdup(filename), g_file_get_path(tmpFile.get()));
 }
 
 void LoadHandler::parserStartElement(GMarkupParseContext* context, const gchar* elementName,
@@ -907,6 +912,10 @@ void LoadHandler::parserEndElement(GMarkupParseContext* context, const gchar* el
     if (handler->pos == PARSER_POS_STARTED && strcmp(elementName, handler->endRootTag) == 0) {
         handler->pos = PASER_POS_FINISHED;
     } else if (handler->pos == PARSER_POS_IN_PAGE && strcmp(elementName, "page") == 0) {
+        // handle unnecessary layer insertion in case of existing layers in file
+        if (handler->page->getLayerCount() == 0) {
+            handler->page->addLayer(new Layer());
+        }
         handler->pos = PARSER_POS_STARTED;
         handler->page = nullptr;
     } else if (handler->pos == PARSER_POS_IN_LAYER && strcmp(elementName, "layer") == 0) {

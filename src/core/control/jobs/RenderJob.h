@@ -37,14 +37,13 @@ public:
     void run() override;
 
 private:
-    /**
-     * Repaint the widget in UI Thread
-     */
-    static void repaintWidget(GtkWidget* widget);
+    void repaintPage() const;
+
+    void repaintPageArea(double x1, double y1, double x2, double y2) const;
 
     void rerenderRectangle(xoj::util::Rectangle<double> const& rect);
 
-    void renderToBuffer(cairo_surface_t* buffer) const;
+    void renderToBuffer(cairo_t* cr) const;
 
 private:
     XojPageView* view;

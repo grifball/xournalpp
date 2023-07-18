@@ -29,6 +29,7 @@
 #include "undo/InsertUndoAction.h"                 // for InsertsUndoAction
 #include "undo/UndoRedoHandler.h"                  // for UndoRedoHandler
 #include "util/Range.h"                            // for Range
+#include "util/Util.h"                             // for cairo_set_dash_from_vector
 #include "util/i18n.h"                             // for _
 #include "util/serializing/ObjectInputStream.h"    // for ObjectInputStream
 #include "util/serializing/ObjectOutputStream.h"   // for ObjectOutputStream
@@ -64,7 +65,7 @@ EditSelection::EditSelection(UndoRedoHandler* undo, const PageRef& page, XojPage
 
 EditSelection::EditSelection(UndoRedoHandler* undo, Selection* selection, XojPageView* view):
         snappingHandler(view->getXournal()->getControl()->getSettings()) {
-    calcSizeFromElements(selection->selectedElements);
+    Range r = calcSizeFromElements(selection->selectedElements);
 
     construct(undo, view, view->getPage());
 
@@ -80,7 +81,7 @@ EditSelection::EditSelection(UndoRedoHandler* undo, Selection* selection, XojPag
         this->sourceLayer->removeElement(e, false);
     }
 
-    view->rerenderPage();
+    view->rerenderRange(r);
 }
 
 EditSelection::EditSelection(UndoRedoHandler* undo, Element* e, XojPageView* view, const PageRef& page):
@@ -97,7 +98,7 @@ EditSelection::EditSelection(UndoRedoHandler* undo, Element* e, XojPageView* vie
 EditSelection::EditSelection(UndoRedoHandler* undo, const vector<Element*>& elements, XojPageView* view,
                              const PageRef& page):
         snappingHandler(view->getXournal()->getControl()->getSettings()) {
-    calcSizeFromElements(elements);
+    Range r = calcSizeFromElements(elements);
     construct(undo, view, page);
 
     for (Element* e: elements) {
@@ -105,13 +106,13 @@ EditSelection::EditSelection(UndoRedoHandler* undo, const vector<Element*>& elem
         this->sourceLayer->removeElement(e, false);
     }
 
-    view->rerenderPage();
+    view->rerenderRange(r);
 }
 
 EditSelection::EditSelection(UndoRedoHandler* undo, XojPageView* view, const PageRef& page, Layer* layer):
         snappingHandler(view->getXournal()->getControl()->getSettings()) {
     const auto& elements = layer->getElements();
-    calcSizeFromElements(elements);
+    Range r = calcSizeFromElements(elements);
     construct(undo, view, page);
 
     long i = 0L;
@@ -122,17 +123,17 @@ EditSelection::EditSelection(UndoRedoHandler* undo, XojPageView* view, const Pag
 
     layer->clearNoFree();
 
-    view->rerenderPage();
+    view->rerenderRange(r);
 }
 
-void EditSelection::calcSizeFromElements(vector<Element*> elements) {
+auto EditSelection::calcSizeFromElements(vector<Element*> elements) -> Range {
     if (elements.empty()) {
         x = 0;
         y = 0;
         width = 0;
         height = 0;
         snappedBounds = Rectangle<double>{};
-        return;
+        return Range();
     }
 
     Element* first = elements.front();
@@ -153,6 +154,7 @@ void EditSelection::calcSizeFromElements(vector<Element*> elements) {
     height = range.getHeight() + 3 * this->btnWidth;
 
     snappedBounds = rect;
+    return range;
 }
 
 void EditSelection::construct(UndoRedoHandler* undo, XojPageView* view, const PageRef& sourcePage) {
@@ -322,7 +324,7 @@ auto EditSelection::getYOnViewAbsolute() -> int {
  * (or nullptr if nothing is done)
  */
 auto EditSelection::setSize(ToolSize size, const double* thicknessPen, const double* thicknessHighlighter,
-                            const double* thicknessEraser) -> UndoAction* {
+                            const double* thicknessEraser) -> UndoActionPtr {
     return this->contents->setSize(size, thicknessPen, thicknessHighlighter, thicknessEraser);
 }
 
@@ -330,7 +332,7 @@ auto EditSelection::setSize(ToolSize size, const double* thicknessPen, const dou
  * Fills the stroke, return an undo action
  * (Or nullptr if nothing done, e.g. because there is only an image)
  */
-auto EditSelection::setFill(int alphaPen, int alphaHighligther) -> UndoAction* {
+auto EditSelection::setFill(int alphaPen, int alphaHighligther) -> UndoActionPtr {
     return this->contents->setFill(alphaPen, alphaHighligther);
 }
 
@@ -344,13 +346,13 @@ auto EditSelection::setLineStyle(LineStyle style) -> UndoActionPtr { return this
  * Set the color of all elements, return an undo action
  * (Or nullptr if nothing done, e.g. because there is only an image)
  */
-auto EditSelection::setColor(Color color) -> UndoAction* { return this->contents->setColor(color); }
+auto EditSelection::setColor(Color color) -> UndoActionPtr { return this->contents->setColor(color); }
 
 /**
  * Sets the font of all containing text elements, return an undo action
  * (or nullptr if there are no Text elements)
  */
-auto EditSelection::setFont(XojFont& font) -> UndoAction* { return this->contents->setFont(font); }
+auto EditSelection::setFont(XojFont& font) -> UndoActionPtr { return this->contents->setFont(font); }
 
 /**
  * Fills de undo item if the selection is deleted
@@ -751,13 +753,17 @@ void EditSelection::updateMatrix() {
     cairo_matrix_translate(&this->cmatrix, -rx, -ry);
 }
 
-void EditSelection::moveSelection(double dx, double dy) {
+void EditSelection::moveSelection(double dx, double dy, bool addMoveUndo) {
     this->x += dx;
     this->y += dy;
     this->snappedBounds.x += dx;
     this->snappedBounds.y += dy;
 
     updateMatrix();
+
+    if (addMoveUndo) {
+        this->contents->addMoveUndo(this->undo, dx, dy);
+    }
 
     this->view->getXournal()->repaintSelection();
 }
@@ -967,7 +973,7 @@ void EditSelection::paint(cairo_t* cr, double zoom) {
     double y = this->y;
 
 
-    if (std::abs(this->rotation) > __DBL_EPSILON__) {
+    if (std::abs(this->rotation) > std::numeric_limits<double>::epsilon()) {
         this->rotation = snappingHandler.snapAngle(this->rotation, false);
 
 
@@ -993,8 +999,8 @@ void EditSelection::paint(cairo_t* cr, double zoom) {
     // set the line always the same size on display
     cairo_set_line_width(cr, 1);
 
-    const double dashes[] = {10.0, 10.0};
-    cairo_set_dash(cr, dashes, sizeof(dashes) / sizeof(dashes[0]), 0);
+    const std::vector<double> dashes = {10.0, 10.0};
+    Util::cairo_set_dash_from_vector(cr, dashes, 0);
     gdk_cairo_set_source_rgba(cr, &selectionColor);
 
     cairo_rectangle(cr, std::min(x, x + width) * zoom, std::min(y, y + height) * zoom, std::abs(width) * zoom,

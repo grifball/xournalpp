@@ -43,6 +43,12 @@ public:
 
 public:
     /**
+     * Layout sidebar
+     */
+    void layout();
+
+
+    /**
      * A page was selected, so also select this page in the sidebar
      */
     void selectPageNr(size_t page, size_t pdfPage);
@@ -73,6 +79,12 @@ public:
      * Gets the sidebar toolbar
      */
     SidebarToolbar* getToolbar();
+
+    /**
+     * Ask the user whether a page with the given id
+     * should be added to the document.
+     */
+    void askInsertPdfPage(size_t pdfPage);
 
 public:
     // DocumentListener interface

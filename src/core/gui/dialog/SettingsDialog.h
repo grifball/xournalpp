@@ -47,7 +47,7 @@ public:
      * Set active regions
      */
     void enableWithCheckbox(const std::string& checkbox, const std::string& widget);
-    void disableWithCheckbox(const std::string& checkbox, const std::string& widget);
+    [[maybe_unused]] void disableWithCheckbox(const std::string& checkbox, const std::string& widget);
 
     /*
      * Listeners for changes to settings.
@@ -69,8 +69,6 @@ private:
     void loadSlider(const char* name, double value);
     double getSlider(const char* name);
 
-    static std::string updateHideString(const std::string& hidden, bool hideMenubar, bool hideSidebar);
-
     void initMouseButtonEvents();
     void initMouseButtonEvents(const char* hbox, int button, bool withDevice = false);
 
@@ -88,8 +86,8 @@ private:
     std::vector<DeviceInfo> audioOutputDevices;
 
     std::unique_ptr<LanguageConfigGui> languageConfig;
-    std::vector<ButtonConfigGui*> buttonConfigs;
-    std::vector<DeviceClassConfigGui*> deviceClassConfigs;
+    std::vector<std::unique_ptr<ButtonConfigGui>> buttonConfigs;
+    std::vector<std::unique_ptr<DeviceClassConfigGui>> deviceClassConfigs;
 
     LatexSettingsPanel latexPanel;
 };
