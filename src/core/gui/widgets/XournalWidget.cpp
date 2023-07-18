@@ -290,7 +290,8 @@ static auto gtk_xournal_draw(GtkWidget* widget, cairo_t* cr) -> gboolean {
     // Add a padding for the shadow of the pages
     Rectangle clippingRect(x1 - 10, y1 - 10, x2 - x1 + 20, y2 - y1 + 20);
 
-    for (XojPageView* pv: xournal->view->getViewPages()) {
+    //for (XojPageView* pv: xournal->view->getViewPages()) {
+    for (auto&& pv: xournal->view->getViewPages()) {
         int px = pv->getX();
         int py = pv->getY();
         int pw = pv->getDisplayWidth();
