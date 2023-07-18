@@ -183,13 +183,11 @@ void SidebarPreviewPages::updatePreviews() {
     size_t len = doc->getPageCount();
     for (size_t i = 0; i < len; i++) {
         auto page = doc->getPage(i);
-        SidebarPreviewBaseEntry* pre = new SidebarPreviewPageEntry(this, page);
-        this->previews.push_back(pre);
-        pre->setBookmarked(page->isBookmarked());
+        auto p = std::make_unique<SidebarPreviewPageEntry>(this, page, i);
+        p->setBookmarked(page->isBookmarked());
         if (i == this->selectedEntry) {
-          pre->setSelected(true);
+          p->setSelected(true);
         }
-        auto p = std::make_unique<SidebarPreviewPageEntry>(this, doc->getPage(i), i);
         gtk_layout_put(GTK_LAYOUT(this->iconViewPreview), p->getWidget(), 0, 0);
         this->previews.emplace_back(std::move(p));
     }
@@ -238,12 +236,11 @@ void SidebarPreviewPages::pageInserted(size_t page) {
     doc->lock();
 
     PageRef pr = doc->getPage(page);
-    SidebarPreviewBaseEntry* pre = new SidebarPreviewPageEntry(this, pr);
-    pre->setBookmarked(pr->isBookmarked());
-    if (page == this->selectedEntry) {
-        pre->setSelected(true);
-    }
     auto p = std::make_unique<SidebarPreviewPageEntry>(this, doc->getPage(page), page);
+    p->setBookmarked(pr->isBookmarked());
+    if (page == this->selectedEntry) {
+        p->setSelected(true);
+    }
 
     doc->unlock();
 
