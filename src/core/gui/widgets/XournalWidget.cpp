@@ -14,7 +14,7 @@
 #include "gui/Layout.h"                     // for Layout
 #include "gui/LegacyRedrawable.h"           // for Redrawable
 #include "gui/PageView.h"                   // for XojPageView
-#include "core/model/XojPage.h" // for XojPage
+#include "model/XojPage.h" // for XojPage
 #include "gui/Shadow.h"                     // for Shadow
 #include "gui/XournalView.h"                // for XournalView
 #include "gui/inputdevices/InputContext.h"  // for InputContext
